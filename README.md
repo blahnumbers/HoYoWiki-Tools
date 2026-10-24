@@ -13,7 +13,7 @@ A collection of small applications to streamline the work of HoYoWiki collaborat
 ### Currently available modules
 
 * **PGC Creator:** Creates and fills in a PGC spreadsheet in batch from a template for it to be loaded and pushed into the WET.
-* **Quest Formatter:** Takes text data from a localization sheet made by the Quest Team and formats it so it is ready to be pasted directly into the WET.
+* **Quest Formatter:** Takes text data from a localization sheet made by the Quest Team and formats it so it is ready to be pasted directly into the WET. Supports pasting the text columns or importing the original `.xlsx` / `.csv` data file, including automatic speaker name localization from the file's `Special Speaker` section.
 
 </details>
 
@@ -94,5 +94,13 @@ python -m streamlit run app.py
 ## Developer notes
 
 This application is meant to be used by HoYoWiki collaborators, but is by no means officially affiliated or endorsed by HoYoverse.
+
+### Running the tests
+
+With the virtual environment from the installation steps activated, run:
+
+```sh
+python -m unittest discover -s tests
+```
 
 This program uses the Streamlit library, which is open sourced under the Apache 2.0 license. A copy of the aforementioned license document can be found in the [`appendix`](appendix) folder of the application or on Streamlit's [GitHub page](https://github.com/streamlit/streamlit?tab=Apache-2.0-1-ov-file).

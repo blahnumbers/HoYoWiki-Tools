@@ -1,0 +1,240 @@
+import unittest
+
+import pandas as pd
+
+from utils import quest_format
+
+
+DIALOGUE_ROWS = {
+    "header": [
+        "Quest Objectives",
+        "Quest Objective",
+        "Quest Description",
+        "Katheryne",
+        "Jeht",
+        "Traveler",
+        "(If you talked to Katheryne, the quest starts)",
+        "Treasure Street, Sumeru",
+        "Optional Dialogue: Talk to Jeht again",
+        "Choice",
+        "1. Traveler",
+        "2.1. Traveler",
+        "",
+        "Missing Translation",
+    ],
+    "text": [
+        "",
+        "Objective line",
+        "Description line",
+        "Hello {NICKNAME}",
+        "Hi there",
+        "Choice text",
+        "",
+        "",
+        "",
+        "",
+        "First choice",
+        "Nested choice",
+        "Narration",
+        "",
+    ],
+}
+
+
+class ClassifyRowTests(unittest.TestCase):
+    def test_recognizes_every_row_type(self) -> None:
+        cases = [
+            (("Quest Description", "text"), "description"),
+            (("Quest Objective", "text"), "objective"),
+            (("1.0", "text"), "objective"),
+            (("Missing Translation", ""), "missing"),
+            (("Optional Text: Something", ""), "addopt"),
+            (("Choice", ""), "choice_flag"),
+            (("1. Traveler", "text"), "choice_branch"),
+            (("2.1. Traveler", "text"), "choice_branch"),
+            (("Treasure Street, Sumeru", ""), "location"),
+            (("Katheryne", "Hello"), "dialogue"),
+            (("(If you talked to Katheryne)", ""), "sub_mission"),
+            (("(If you talked to Katheryne, the quest starts)", ""), "sub_mission"),
+            (("Quest Objectives", ""), "sub_mission"),
+            (("", "Narration"), "action"),
+            (("", ""), "blank"),
+        ]
+
+        for (header, text), expected in cases:
+            with self.subTest(header=header, text=text):
+                self.assertEqual(quest_format.classify_row(header, text), expected)
+
+
+class ClassifyDialogueTests(unittest.TestCase):
+    def _classify(self, prompt_variables: bool = True) -> quest_format.ClassificationResult:
+        return quest_format.classify_dialogue(
+            pd.DataFrame(DIALOGUE_ROWS),
+            speaker_map = {"Jeht": "Джехт"},
+            prompt_variables = prompt_variables,
+            prompt_headers = True,
+        )
+
+    def test_assigns_types_and_normalizes_choice_speakers(self) -> None:
+        result = self._classify()
+
+        self.assertEqual(
+            result.df["type"].tolist(),
+            [
+                "sub_mission",
+                "objective",
+                "description",
+                "dialogue",
+                "dialogue",
+                "dialogue",
+                "sub_mission",
+                "location",
+                "addopt",
+                "choice_flag",
+                "choice_branch",
+                "choice_branch",
+                "action",
+                "missing",
+            ],
+        )
+        self.assertEqual(result.df.iloc[10]["header"], "Traveler")
+        self.assertEqual(result.df.iloc[11]["header"], "Traveler")
+
+    def test_groups_prompts_and_auto_localizes_special_speakers(self) -> None:
+        result = self._classify()
+
+        self.assertEqual(set(result.prompts["speakers"]), {"Katheryne", "Traveler"})
+        self.assertIn("(If you talked to Katheryne, the quest starts)", result.prompts["conditions"])
+        self.assertIn("Quest Objectives", result.prompts["conditions"])
+        self.assertIn("Optional Dialogue: Talk to Jeht again", result.prompts["optional"])
+        self.assertIn("Treasure Street, Sumeru", result.prompts["locations"])
+        self.assertEqual(
+            result.prompts["labels"],
+            {"Quest Objective": 1, "Quest Description": 1},
+        )
+        self.assertEqual(result.auto_localized, {"Jeht": "Джехт"})
+        self.assertEqual(result.df.iloc[4]["header"], "Джехт")
+        self.assertNotIn("Jeht", result.prompts["speakers"])
+
+    def test_variables_are_optional(self) -> None:
+        result = self._classify(prompt_variables = True)
+        self.assertIn("{NICKNAME}", result.prompts["variables"])
+
+        result_without_variables = self._classify(prompt_variables = False)
+        self.assertEqual(result_without_variables.prompts["variables"], {})
+
+    def test_classifying_twice_replaces_the_type_column(self) -> None:
+        result = self._classify()
+        second_result = quest_format.classify_dialogue(result.df, speaker_map = {"Jeht": "Джехт"})
+
+        self.assertIn("type", second_result.df.columns)
+        self.assertEqual(list(second_result.df.columns).count("type"), 1)
+
+    def test_disabling_header_prompts_keeps_english_values(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Katheryne", "Jeht"], "text": ["Hello", "Hi"]}),
+            speaker_map = {"Jeht": "Джехт"},
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        self.assertFalse(result.has_prompts)
+        self.assertEqual(result.df.iloc[0]["header"], "Katheryne")
+        self.assertEqual(result.df.iloc[1]["header"], "Джехт")
+
+
+class ApplyTranslationsTests(unittest.TestCase):
+    def test_replaces_headers_without_touching_prose(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["Paimon said hello."]}),
+            prompt_variables = False,
+        )
+
+        quest_format.apply_translations(
+            result.df,
+            {"speakers": {"Paimon": "Паймон"}},
+        )
+
+        self.assertEqual(result.df.iloc[0]["header"], "Паймон")
+        self.assertEqual(result.df.iloc[0]["text"], "Paimon said hello.")
+
+    def test_applies_grouped_headers_and_variables(self) -> None:
+        result = quest_format.classify_dialogue(pd.DataFrame(DIALOGUE_ROWS))
+
+        quest_format.apply_translations(
+            result.df,
+            {
+                "speakers": {"Katheryne": "Катерина", "Traveler": "Путешественник"},
+                "conditions": {"(If you talked to Katheryne, the quest starts)": "(Если поговорить с Катериной)"},
+                "optional": {"Optional Dialogue: Talk to Jeht again": "Необязательный диалог: снова поговорите с Джехт"},
+                "locations": {"Treasure Street, Sumeru": "Улица Сокровищ, Сумеру"},
+                "labels": {"Quest Objective": "Задание", "Quest Description": "Описание задания"},
+                "variables": {"{NICKNAME}": "{ИМЯ}"},
+            },
+        )
+
+        headers = result.df["header"].tolist()
+        self.assertIn("Катерина", headers)
+        self.assertIn("Путешественник", headers)
+        self.assertIn("Задание", headers)
+        self.assertIn("Описание задания", headers)
+        self.assertIn("(Если поговорить с Катериной)", headers)
+        self.assertIn("Необязательный диалог: снова поговорите с Джехт", headers)
+        self.assertIn("Улица Сокровищ, Сумеру", headers)
+        self.assertIn("Hello {ИМЯ}", result.df["text"].tolist())
+
+    def test_empty_translation_keeps_original_value(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["Hello"]}),
+            prompt_variables = False,
+        )
+
+        quest_format.apply_translations(result.df, {"speakers": {"Paimon": "   "}})
+
+        self.assertEqual(result.df.iloc[0]["header"], "Paimon")
+
+
+class FormattingTests(unittest.TestCase):
+    def test_format_objective_ignores_rows_without_header(self) -> None:
+        objective_df = pd.DataFrame(
+            {"header": ["1", "2", ""], "text": ["One", "Two", "Ignored"]}
+        )
+
+        self.assertEqual(
+            quest_format.format_objective(objective_df),
+            "<ol><li><p>One</p></li><li><p>Two</p></li></ol>",
+        )
+
+    def test_format_dialogue_uses_the_selected_preset(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Katheryne"], "text": ["Hello"]}),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        english_output = quest_format.format_dialogue(result.df, "EN")
+        russian_output = quest_format.format_dialogue(result.df, "RU")
+
+        self.assertIn("Katheryne: </span>Hello", english_output)
+        self.assertIn("<strong>Katheryne: </strong></span></p>", russian_output)
+        self.assertIn("<p>Hello</p>", russian_output)
+
+    def test_format_dialogue_balances_tables(self) -> None:
+        result = quest_format.classify_dialogue(pd.DataFrame(DIALOGUE_ROWS))
+
+        output = quest_format.format_dialogue(result.df, "RU")
+
+        self.assertEqual(output.count("<table>"), output.count("</table>"))
+
+    def test_prepare_text_handles_non_breaking_spaces_and_ruby(self) -> None:
+        self.assertEqual(
+            quest_format.prepare_text("A{NON_BREAK_SPACE}B"),
+            "A&nbsp;B",
+        )
+
+        ruby_output = quest_format.prepare_text("pre{RUBY#[D]ruby text}base")
+        self.assertIn('<custom-ruby data-ruby="prebase|ruby text">', ruby_output)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,390 +1,331 @@
+import hashlib
+import json
+
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-import pandas as pd
-import html
-import json
-import re
+
+from utils import quest_format
+from utils.quest_data import LANGUAGE_LABELS, QuestData, QuestDataError, parse_quest_file
 
 
-def format_objective(objective_df: pd.DataFrame) -> None:
-    st.session_state["quest_formatter_html"] = None
-
-    html_data = "<ol>"
-
-    for _, row in objective_df.iterrows():
-        if row["header"]:
-            html_data += "<li><p>%s</p></li>" % row["text"]
-
-    html_data += "</ol>"
-    
-    st.session_state["quest_formatter_html"] = html_data
+PENDING_KEY = "quest_formatter_pending"
+OUTPUT_KEY = "quest_formatter_html"
+TARGET_LANGUAGE_KEY = "quest_formatter_target_language"
+JUST_FORMATTED_KEY = "quest_formatter_just_formatted"
 
 
-def classify_dialogue(dialogue_df: pd.DataFrame) -> None:
-    st.session_state["quest_formatter_html"] = None
+@st.cache_data(show_spinner=False)
+def _parse_uploaded(file_bytes: bytes, file_name: str) -> QuestData:
+    return parse_quest_file(file_bytes, file_name)
 
-    dialogue_df.insert(0, "type", None)
 
-    variable_text = []
+def _translation_key(target: str, group: str, original: str) -> str:
+    digest = hashlib.sha1(original.encode("utf-8")).hexdigest()[:16]
+    return "qf_translation_%s_%s_%s" % (target, group, digest)
 
-    for idx, row in dialogue_df.iterrows():
-        row_type = None
 
-        if "Desc" in row["header"]:
-            row_type = "description"
+def _set_output(formatted_html: str) -> None:
+    st.session_state[OUTPUT_KEY] = formatted_html
+    st.session_state[JUST_FORMATTED_KEY] = True
 
-            dialogue_df.at[idx, "header"] = "Quest Description"
-            variable_text.append("Quest Description")
-        elif "Objective" in row["header"] or row["header"].isdigit():
-            row_type = "objective"
 
-            dialogue_df.at[idx, "header"] = "Quest Objective"
-            variable_text.append("Quest Objective")
-        elif "Missing" in row["header"]:
-            row_type = "missing"
-        elif "Additional" in row["header"] or "Alternative" in row["header"] or "Optional" in row["header"]:
-            row_type = "addopt"
+def _handle_dialogue(
+    dialogue_df: pd.DataFrame,
+    preset: str,
+    speaker_map: dict[str, str] | None = None,
+    target: str = "EN",
+    prompt_variables: bool = True,
+    prompt_headers: bool = True,
+) -> None:
+    result = quest_format.classify_dialogue(
+        dialogue_df,
+        speaker_map = speaker_map,
+        prompt_variables = prompt_variables,
+        prompt_headers = prompt_headers,
+    )
 
-            variable_text.append(row["header"])
-        elif row["header"] == "Choice":
-            row_type = "choice_flag"
-        elif re.search(r"\d+\.\s+", row["header"]):
-            row_type = "choice_branch"
-            
-            choice_speaker = re.search(r"(?:\d+\.\s+)+(.+)", row["header"])
-            
-            if choice_speaker is not None:
-                variable_text.append(choice_speaker[1])
-        elif "," in row["header"]:
-            row_type = "location"
-
-            variable_text.append(row["header"])
-        elif row["header"] and row["text"]:
-            row_type = "dialogue"
-
-            variable_text.append(row["header"])
-        elif row["header"]:
-            row_type = "sub_mission"
-
-            variable_text.append(row["header"])
-        elif row["text"]:
-            row_type = "action"
-        else:
-            row_type = "blank"
-        
-        dialogue_df.at[idx, "type"] = row_type
-
-        for variable_group in re.finditer(r"(?:\{[^{}]+\})+", row["text"]):
-            matched_text = variable_group[0]
-
-            if r"{RUBY#" in matched_text:
-                for ruby_group in re.finditer(r"\s*(\S+)\{RUBY#\[.\](.+)\}(\S+)\s*", row["text"]):
-                    matched_ruby = ruby_group[0]
-
-                    base_text = html.escape(ruby_group[1] + ruby_group[3])
-                    ruby_text = html.escape(ruby_group[2])
-
-                    formatted_ruby = """<custom-ruby data-ruby="%s|%s"></custom-ruby>""" % (base_text, ruby_text)
-
-                    dialogue_df.at[idx, "text"] = row["text"].replace(matched_ruby, formatted_ruby)
-            elif r"{NON_BREAK_SPACE}" in matched_text:
-                dialogue_df.at[idx, "text"] = row["text"].replace(r"{NON_BREAK_SPACE}", "&nbsp;")
-            else:
-                variable_text.append(matched_text)
-
-    if len(variable_text) > 0:
-        get_variable_text_translation(dialogue_df, variable_text)
+    if result.has_prompts:
+        st.session_state[PENDING_KEY] = {
+            "result": result,
+            "preset": preset,
+            "target": target,
+        }
+        translation_dialog()
     else:
-        format_dialogue(dialogue_df)
+        _set_output(quest_format.format_dialogue(result.df, preset))
 
 
-@st.dialog("Header & Bracket Content Replacement", width = "medium")
-def get_variable_text_translation(classified_dialogue_df: pd.DataFrame, variable_text: list[str]) -> None:
-    st.markdown("If applicable, please provide a translation of the content below. If not, leave field as is. Then, press `Submit`.")
+@st.dialog("Content Replacement", width = "large")
+def translation_dialog() -> None:
+    pending = st.session_state.get(PENDING_KEY)
 
-    text_to_translate = list(dict.fromkeys(variable_text))
-    
-    for og_text in text_to_translate:
-        st.text_input(
-            og_text,
-            value = og_text,
-            key = og_text,
-            placeholder = "Do not leave empty!",
-            icon = ":material/translate:"
+    if not pending:
+        st.warning("Nothing to format. Please try again.")
+        return
+
+    result: quest_format.ClassificationResult = pending["result"]
+    target = pending["target"]
+    preset = pending["preset"]
+
+    st.markdown(
+        "Review the fields below. Values are grouped so speaker names stay separate "
+        "from conditional strings and other headers. Fields left unchanged keep their "
+        "original English value. Press `Format` when you are done."
+    )
+
+    if result.auto_localized:
+        pairs = ", ".join(
+            "%s → %s" % (english_name, localized_name)
+            for english_name, localized_name in result.auto_localized.items()
         )
-    
-    text_to_translate.sort(key = lambda og_text: len(og_text), reverse = True)
-    
-    if st.button("Submit", key = "submit_translated_text_button"):
-        with st.spinner("Please wait...", show_time = True):
-            for og_text in text_to_translate:
-                translated_text = st.session_state[og_text]
+        st.caption("Auto-localized from the file's `Special Speaker` section: %s" % pairs)
 
-                classified_dialogue_df = classified_dialogue_df.map(lambda text: text.replace(og_text, translated_text))
-            
-            format_dialogue(classified_dialogue_df)
+    entered_values: dict[str, dict[str, str]] = {}
 
-            st.rerun()
+    for group_key, group_title, group_description in quest_format.PROMPT_GROUPS:
+        items = result.prompts.get(group_key) or {}
 
+        if not items:
+            continue
 
-def format_dialogue(classified_dialogue_df: pd.DataFrame) -> None:
-    html_data = ""
-    opened_tags = []
+        st.subheader("%s (%d)" % (group_title, len(items)))
+        st.caption(group_description)
 
-    language_preset = "EN" if st.session_state["quest_formatter_preset"] is None else st.session_state["quest_formatter_preset"]
+        group_values: dict[str, str] = {}
 
-    for idx, row in classified_dialogue_df.iterrows():
-        last_row_type = classified_dialogue_df.at[idx - 1, "type"] if idx > 0 else None
-        next_row_type = classified_dialogue_df.at[idx + 1, "type"] if idx < (len(classified_dialogue_df) - 1) else None
+        for original, count in items.items():
+            group_values[original] = st.text_input(
+                original,
+                value = original,
+                key = _translation_key(target, group_key, original),
+                help = ("Used in %d rows" % count) if count > 1 else None,
+            )
 
-        match row["type"]:
-            case "description":
-                match language_preset:
-                    case "EN":
-                        html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong> %s</span></p>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        """ % (row["header"], row["text"])
-                    case "RU":
-                        html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong></span>%s</p>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        """ % (row["header"], row["text"])
-            case "objective":
-                match language_preset:
-                    case "EN":
-                        html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p><strong>%s: </strong>%s</p>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        """ % (row["header"], row["text"])
-                    case "RU":
-                        html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong>%s</span></p>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        """ % (row["header"], row["text"])
-            case "missing":
-                continue
-            case "addopt":
-                html_data += """
-                <p>%s</p>
-                <table>
-                    <tbody>
-                        <tr>
-                            <td colspan="1" rowspan="1">
-                """ % row["header"]
+        entered_values[group_key] = group_values
 
-                opened_tags.append("addopt")
-            case "choice_flag":
-                continue
-            case "choice_branch":
-                if last_row_type != "choice_flag":
-                    opened_tags.reverse()
+    st.divider()
 
-                    html_data += """
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    """
+    if st.button("Format", type = "primary", key = "quest_formatter_apply_translations"):
+        with st.spinner("Formatting...", show_time = True):
+            quest_format.apply_translations(result.df, entered_values)
+            _set_output(quest_format.format_dialogue(result.df, preset))
+            st.session_state[PENDING_KEY] = None
 
-                    opened_tags.remove("choice_branch")
-                    
-                    opened_tags.reverse()
-                    
-                row["header"] = re.sub(r"\d+\.\s+", "", row["header"])
-
-                match language_preset:
-                    case "EN":
-                        html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p><span style="color: rgb(255, 255, 255);">%s: %s</span></p>
-                        """ % (row["header"], row["text"])
-                    case "RU":
-                        html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong>%s</span></p>
-                        """ % (row["header"], row["text"])
-
-                opened_tags.append("choice_branch")
-            case "location":
-                match language_preset:
-                    case "EN":
-                        html_data += """
-                        <p><span style="color: rgb(236, 229, 216);"><strong>%s</strong></span></p>
-                        """ % row["header"]
-                    case "RU":
-                        html_data += """
-                        <p><span style="color: rgb(255, 255, 255);"><strong>%s</strong></span></p>
-                        """ % row["header"]
-            case "dialogue":
-                if last_row_type == "objective":
-                    html_data += "<p></p>"
-                
-                match language_preset:
-                    case "EN":
-                        html_data += """<p><span style="color: rgb(255, 255, 255);">%s: </span>%s</p>""" % (row["header"], row["text"])
-                    case "RU":
-                        html_data += """
-                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong></span></p>
-                        <p>%s</p>
-                        """ % (row["header"], row["text"])
-            case "sub_mission":
-                if last_row_type == "objective":
-                    html_data += "<p></p>"
-                
-                html_data += "<p><em>%s</em></p>" % row["header"]
-            case "action":
-                html_data += """
-                <p></p>
-                <table>
-                    <tbody>
-                        <tr>
-                            <td colspan="1" rowspan="1">
-                                <p><span style="color: rgb(255, 255, 255);">%s</span></p>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-                <p></p>
-                """ % row["text"]
-            case "blank":
-                if opened_tags and next_row_type != "choice_flag":
-                    match opened_tags[-1]:
-                        case "addopt" | "choice_branch":
-                            html_data += """
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                            """
-
-                            opened_tags.pop()
-
-                if next_row_type != "choice_branch":
-                    html_data += "<p></p>"
-
-    if opened_tags:
-        for tag in reversed(opened_tags):
-            match tag:
-                case "addopt" | "choice_branch":
-                    html_data += """
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    """
-
-                    opened_tags.pop()
-    
-    st.session_state["quest_formatter_html"] = html_data
+        st.rerun()
 
 
-if "quest_formatter_html" not in st.session_state:
-    st.session_state["quest_formatter_html"] = None
+def _render_import_mode() -> None:
+    imported_file = st.file_uploader(
+        "Upload Quest Data File",
+        type = ["xlsx", "csv"],
+        key = "quest_formatter_file",
+        help = (
+            "The file must follow the Quest Team localization sheet format: keys in "
+            "column A, language codes in the first row, and a Dialogue section with a "
+            "Special Speaker block."
+        ),
+    )
 
-st.title("Quest Formatter")
+    if imported_file is None:
+        st.info(
+            "Upload the quest's `.xlsx` or `.csv` localization file to get started. "
+            "You can also switch back to `Paste Text` above."
+        )
+        st.stop()
 
-st.markdown("""
-Takes text data from a localization sheet made by the Quest Team and formats it so it is ready to be pasted directly into the WET.
+    try:
+        quest = _parse_uploaded(imported_file.getvalue(), imported_file.name)
+    except QuestDataError as error:
+        st.error("Could not read this file: %s" % error)
+        st.stop()
 
-Tested for: :green-badge[:material/check: Genshin Impact]
-""")
+    if st.session_state.get(TARGET_LANGUAGE_KEY) not in quest.languages:
+        st.session_state[TARGET_LANGUAGE_KEY] = (
+            "EN" if "EN" in quest.languages else quest.languages[0]
+        )
 
-with st.expander("How to Use"):
-    st.subheader("To Format Quest Objective")
+    target_language = st.selectbox(
+        "Target Language:",
+        quest.languages,
+        format_func = lambda code: "%s — %s" % (code, LANGUAGE_LABELS.get(code, code)),
+        key = TARGET_LANGUAGE_KEY,
+    )
 
-    st.markdown("""
-    1. Open the localization sheet of the quest you're working on
-    2. Locate the `Quest Objective` header
-    3. Starting from the row just below the header, select and copy the first column of quest objective data as well as your language's one (non-numbered quest objectives will automatically be ignored)
-    4. Paste your selection in the page's interactive table, under the `Objective` tab
-    5. Click on the `Format` button
-    6. Click on the `Copy Formatted Text` button that just appeared
-    7. Paste the formatted text into the WET
-    """)
+    title = quest.title_for(target_language)
 
-    st.subheader("To Format Quest Dialogue")
+    if title:
+        st.markdown("**%s**" % title)
 
-    st.markdown("""
-    1. Open the localization sheet of the quest you're working on
-    2. Locate the `Dialogue` header
-    3. Starting from the row just below the header, select and copy the first column of dialogue data as well as your language's one (make sure to fill in the Missing Translation fields beforehand, else exclude them from your selection)
-    4. Paste your selection in the page's interactive table, under the `Dialogue` tab
-    5. Click on the `Format` button
-    6. If prompted, fill in the Content Replacement form
-    7. Click on the `Copy Formatted Text` button that just appeared
-    8. Paste the formatted text into the WET
-    """)
+    st.caption(
+        "%d objectives · %d dialogue rows · %d special speaker name(s)"
+        % (
+            len(quest.objectives),
+            len(quest.dialogue_rows),
+            len(quest.special_speakers),
+        )
+    )
 
-st.divider()
+    missing_translations = quest.missing_translations(target_language)
 
-st.segmented_control(
-    "Language Format Preset:",
-    ["EN", "RU"],
-    default = "EN",
-    key = "quest_formatter_preset"
-)
+    if missing_translations:
+        missing_rows = ", ".join(entry["row"] for entry in missing_translations[:10])
+        row_suffix = ", ..." if len(missing_translations) > 10 else ""
 
-default_table_data = {"header": [""], "text": [""]}
-default_table_df = pd.DataFrame(default_table_data)
+        st.warning(
+            "%d dialogue row(s) have no %s text (sheet rows %s%s). They will be "
+            "formatted as empty lines."
+            % (
+                len(missing_translations),
+                target_language,
+                missing_rows,
+                row_suffix,
+            ),
+            icon = ":material/warning:",
+        )
 
-default_table_config = {
-    "header" : st.column_config.TextColumn("Row Header", width = "small"),
-    "text" : st.column_config.TextColumn("Text", width = "large")
-}
+    missing_special_speakers = quest.missing_special_translations(target_language)
 
-objective_tab, dialogue_tab = st.tabs(["Objective", "Dialogue"])
+    if missing_special_speakers:
+        missing_names = ", ".join(
+            entry["key"] for entry in missing_special_speakers[:10]
+        )
 
-with objective_tab:
-    objective_df = st.data_editor(default_table_df, column_config = default_table_config, num_rows = "dynamic", key = "objective_data")
+        st.info(
+            "These Special Speaker names have no %s translation and will be requested "
+            "manually: %s" % (target_language, missing_names),
+            icon = ":material/translate:",
+        )
 
-    if st.button("Format", type = "primary", key = "format_objective_button"):
-        objective_df.fillna("", inplace = True)
-        format_objective(objective_df)
+    with st.expander("Preview Imported Data"):
+        special_speaker_pairs = quest.special_speaker_pairs(target_language)
 
-with dialogue_tab:
-    dialogue_df = st.data_editor(default_table_df, column_config = default_table_config, num_rows = "dynamic", key = "dialogue_data")
+        if special_speaker_pairs:
+            st.markdown("**Special Speaker**")
+            st.dataframe(
+                pd.DataFrame(
+                    special_speaker_pairs,
+                    columns = ["English Key", "Localized Name"],
+                ),
+                hide_index = True,
+            )
 
-    if st.button("Format", type = "primary", key = "format_dialogue_button"):
-        dialogue_df.fillna("", inplace = True)
-        classify_dialogue(dialogue_df)
+        st.markdown("**Objectives**")
+        st.dataframe(
+            quest.objective_dataframe(target_language).head(25),
+            hide_index = True,
+        )
 
-if st.session_state["quest_formatter_html"] is not None:
-    sanitized_html = json.dumps(st.session_state["quest_formatter_html"])
+        st.markdown("**Dialogue**")
+        st.dataframe(
+            quest.dialogue_dataframe(target_language).head(50),
+            hide_index = True,
+            height = 360,
+        )
+
+    preset = "RU" if target_language == "RU" else "EN"
+
+    st.caption("Output markup preset: `%s` (auto-selected from the target language)" % preset)
+
+    objective_tab, dialogue_tab = st.tabs(["Objective", "Dialogue"])
+
+    with objective_tab:
+        objective_df = quest.objective_dataframe(target_language)
+
+        st.dataframe(objective_df, hide_index = True)
+
+        if st.button(
+            "Format Objectives",
+            type = "primary",
+            key = "format_objective_button_import",
+        ):
+            _set_output(quest_format.format_objective(objective_df))
+
+    with dialogue_tab:
+        dialogue_df = quest.dialogue_dataframe(target_language)
+
+        st.dataframe(dialogue_df, hide_index = True, height = 360)
+
+        if st.button(
+            "Format Dialogue",
+            type = "primary",
+            key = "format_dialogue_button_import",
+        ):
+            _handle_dialogue(
+                dialogue_df,
+                preset = preset,
+                speaker_map = quest.speaker_map(target_language),
+                target = target_language,
+                prompt_variables = False,
+                prompt_headers = target_language != "EN",
+            )
+
+
+def _render_paste_mode() -> None:
+    st.segmented_control(
+        "Language Format Preset:",
+        ["EN", "RU"],
+        default = "EN",
+        key = "quest_formatter_preset",
+    )
+
+    default_table_data = {"header": [""], "text": [""]}
+    default_table_df = pd.DataFrame(default_table_data)
+
+    default_table_config = {
+        "header": st.column_config.TextColumn("Row Header", width = "small"),
+        "text": st.column_config.TextColumn("Text", width = "large"),
+    }
+
+    objective_tab, dialogue_tab = st.tabs(["Objective", "Dialogue"])
+
+    with objective_tab:
+        objective_df = st.data_editor(
+            default_table_df,
+            column_config = default_table_config,
+            num_rows = "dynamic",
+            key = "objective_data",
+        )
+
+        if st.button("Format", type = "primary", key = "format_objective_button"):
+            objective_df.fillna("", inplace = True)
+            _set_output(quest_format.format_objective(objective_df))
+
+    with dialogue_tab:
+        dialogue_df = st.data_editor(
+            default_table_df,
+            column_config = default_table_config,
+            num_rows = "dynamic",
+            key = "dialogue_data",
+        )
+
+        if st.button("Format", type = "primary", key = "format_dialogue_button"):
+            dialogue_df.fillna("", inplace = True)
+            preset = st.session_state.get("quest_formatter_preset") or "EN"
+
+            _handle_dialogue(
+                dialogue_df,
+                preset = preset,
+                speaker_map = None,
+                target = preset,
+                prompt_variables = True,
+                prompt_headers = True,
+            )
+
+
+def _render_output() -> None:
+    formatted_html = st.session_state.get(OUTPUT_KEY)
+
+    if st.session_state.pop(JUST_FORMATTED_KEY, False):
+        st.toast(
+            "Formatted text is ready. Scroll down to copy it.",
+            icon = ":material/check_circle:",
+        )
+
+    if formatted_html is None:
+        return
+
+    sanitized_html = json.dumps(formatted_html).replace("</", "<\\/")
 
     copy_html_button = """
     <button style="font-size: 14px; padding: 10px 10px; border-radius: 8px;" onclick="copyHTML()">Copy Formatted Text</button>
@@ -405,4 +346,77 @@ if st.session_state["quest_formatter_html"] is not None:
     </script>
     """ % sanitized_html
 
-    components.html(copy_html_button)
+    components.html(copy_html_button, height = 60)
+
+
+if OUTPUT_KEY not in st.session_state:
+    st.session_state[OUTPUT_KEY] = None
+
+if PENDING_KEY not in st.session_state:
+    st.session_state[PENDING_KEY] = None
+
+st.title("Quest Formatter")
+
+st.markdown("""
+Takes text data from a localization sheet made by the Quest Team and formats it so it is ready to be pasted directly into the WET. You can paste the text columns or import the original `.xlsx` / `.csv` data file.
+
+Tested for: :green-badge[:material/check: Genshin Impact]
+""")
+
+with st.expander("How to Use"):
+    st.subheader("To Import a Quest Data File")
+
+    st.markdown("""
+    1. Set `Input Method` to `Import File`
+    2. Upload the quest's localization file (`.xlsx` or `.csv`)
+    3. Pick the target language from the languages found in the file
+    4. Open the `Dialogue` tab and click on the `Format Dialogue` button
+    5. If prompted, fill in the Content Replacement form (speaker names are kept separate from conditional strings)
+    6. Click on the `Copy Formatted Text` button that just appeared
+    7. Paste the formatted text into the WET
+    """)
+
+    st.caption("""
+    Speaker names listed in the file's `Special Speaker` section are localized automatically. Conditional strings, optional sections, locations and any names not present there still require manual input.
+    """)
+
+    st.subheader("To Format Quest Objective (Paste)")
+
+    st.markdown("""
+    1. Open the localization sheet of the quest you're working on
+    2. Locate the `Quest Objective` header
+    3. Starting from the row just below the header, select and copy the first column of quest objective data as well as your language's one (non-numbered quest objectives will automatically be ignored)
+    4. Paste your selection in the page's interactive table, under the `Objective` tab
+    5. Click on the `Format` button
+    6. Click on the `Copy Formatted Text` button that just appeared
+    7. Paste the formatted text into the WET
+    """)
+
+    st.subheader("To Format Quest Dialogue (Paste)")
+
+    st.markdown("""
+    1. Open the localization sheet of the quest you're working on
+    2. Locate the `Dialogue` header
+    3. Starting from the row just below it, select and copy the first column of dialogue data as well as your language's one (make sure to fill in the Missing Translation fields beforehand, else exclude them from your selection)
+    4. Paste your selection in the page's interactive table, under the `Dialogue` tab
+    5. Click on the `Format` button
+    6. If prompted, fill in the Content Replacement form
+    7. Click on the `Copy Formatted Text` button that just appeared
+    8. Paste the formatted text into the WET
+    """)
+
+st.divider()
+
+input_method = st.segmented_control(
+    "Input Method:",
+    ["Paste Text", "Import File"],
+    default = "Paste Text",
+    key = "quest_formatter_input_method",
+)
+
+if input_method == "Import File":
+    _render_import_mode()
+else:
+    _render_paste_mode()
+
+_render_output()

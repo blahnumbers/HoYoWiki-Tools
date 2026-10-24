@@ -1,0 +1,500 @@
+"""Pure classification and formatting helpers for the Quest Formatter page.
+
+Keeping this logic free of Streamlit makes it straightforward to test and
+lets the page focus on widgets, dialogs and session state.
+"""
+
+from __future__ import annotations
+
+import html
+import re
+from dataclasses import dataclass, field
+
+import pandas as pd
+
+from utils.quest_data import normalize_name
+
+
+SPEAKER_TYPES = frozenset({"dialogue", "choice_branch"})
+
+PROMPT_GROUPS = (
+    (
+        "speakers",
+        "Speaker Names",
+        "Speakers that are not covered by the file's Special Speaker list. "
+        "Enter their localized display name.",
+    ),
+    (
+        "conditions",
+        "Conditions & Stage Directions",
+        "Conditional branches, notes and stage directions. These still need "
+        "to be translated manually.",
+    ),
+    (
+        "optional",
+        "Optional Sections",
+        "Optional dialogue and optional text section headers.",
+    ),
+    (
+        "locations",
+        "Locations",
+        "Location headers shown before a scene.",
+    ),
+    (
+        "labels",
+        "Field Labels",
+        "Labels used for quest descriptions and quest objectives in the output.",
+    ),
+    (
+        "variables",
+        "Bracket Content",
+        "Placeholder content found in the pasted text. Leave a field as-is "
+        "when it does not need a translation.",
+    ),
+)
+
+PROMPT_GROUP_KEYS = tuple(group[0] for group in PROMPT_GROUPS)
+
+CHOICE_PREFIX_RE = re.compile(r"^(?:\d+\.)+\s+")
+OBJECTIVE_KEY_RE = re.compile(r"^\d+(?:\.0+)?$")
+VARIABLE_RE = re.compile(r"(?:\{[^{}]+\})+")
+RUBY_RE = re.compile(r"\s*(\S+)\{RUBY#\[.\](.+?)\}(\S+)\s*")
+
+
+@dataclass
+class ClassificationResult:
+    df: pd.DataFrame
+    prompts: dict[str, dict[str, int]] = field(default_factory=dict)
+    auto_localized: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def has_prompts(self) -> bool:
+        return any(self.prompts.values())
+
+
+def classify_row(header: str, text: str) -> str:
+    """Return the row type for a header/text pair."""
+
+    header = header.strip()
+
+    if "Desc" in header:
+        return "description"
+
+    if re.search(r"\bObjective\b", header, re.IGNORECASE) or OBJECTIVE_KEY_RE.fullmatch(header):
+        return "objective"
+
+    if "Missing" in header:
+        return "missing"
+
+    if any(keyword in header for keyword in ("Additional", "Alternative", "Optional")):
+        return "addopt"
+
+    if header == "Choice":
+        return "choice_flag"
+
+    if CHOICE_PREFIX_RE.search(header):
+        return "choice_branch"
+
+    # Parenthesised headers are conditional notes / stage directions. Check
+    # this before the comma rule so "(If you talked to X, ...)" is not
+    # mistaken for a location.
+    if header.startswith(("(", "（")):
+        return "sub_mission"
+
+    if "," in header:
+        return "location"
+
+    if header and text:
+        return "dialogue"
+
+    if header:
+        return "sub_mission"
+
+    if text:
+        return "action"
+
+    return "blank"
+
+
+def classify_dialogue(
+    dialogue_df: pd.DataFrame,
+    speaker_map: dict[str, str] | None = None,
+    prompt_variables: bool = True,
+    prompt_headers: bool = True,
+) -> ClassificationResult:
+    """Classify dialogue rows and collect the values that need user input.
+
+    ``speaker_map`` maps English speaker keys to localized names (usually
+    taken from the ``Special Speaker`` section of an imported file). Speakers
+    found in the map are localized automatically. Every other speaker and
+    header is collected into a prompt group.
+    """
+
+    df = _prepare_frame(dialogue_df)
+    normalized_speaker_map = {
+        normalize_name(key): normalize_name(value)
+        for key, value in (speaker_map or {}).items()
+        if normalize_name(key) and normalize_name(value)
+    }
+
+    prompts: dict[str, dict[str, int]] = {key: {} for key in PROMPT_GROUP_KEYS}
+    auto_localized: dict[str, str] = {}
+
+    def add_prompt(group: str, value: str) -> None:
+        if value:
+            prompts[group][value] = prompts[group].get(value, 0) + 1
+
+    def resolve_speaker(row_index: int, speaker: str) -> None:
+        df.at[row_index, "header"] = speaker
+
+        localized_name = normalized_speaker_map.get(speaker)
+
+        if localized_name:
+            df.at[row_index, "header"] = localized_name
+
+            if localized_name != speaker:
+                auto_localized[speaker] = localized_name
+        elif prompt_headers:
+            add_prompt("speakers", speaker)
+
+    for row_index, row in df.iterrows():
+        raw_header = str(row["header"]).strip()
+        text = str(row["text"])
+        row_type = classify_row(raw_header, text)
+
+        df.at[row_index, "type"] = row_type
+
+        if row_type == "description":
+            df.at[row_index, "header"] = "Quest Description"
+
+            if prompt_headers:
+                add_prompt("labels", "Quest Description")
+        elif row_type == "objective":
+            df.at[row_index, "header"] = "Quest Objective"
+
+            if prompt_headers:
+                add_prompt("labels", "Quest Objective")
+        elif row_type == "addopt":
+            normalized_header = normalize_name(raw_header)
+            df.at[row_index, "header"] = normalized_header
+
+            if prompt_headers:
+                add_prompt("optional", normalized_header)
+        elif row_type == "choice_branch":
+            speaker = normalize_name(CHOICE_PREFIX_RE.sub("", raw_header))
+            resolve_speaker(row_index, speaker)
+        elif row_type == "location":
+            normalized_header = normalize_name(raw_header)
+            df.at[row_index, "header"] = normalized_header
+
+            if prompt_headers:
+                add_prompt("locations", normalized_header)
+        elif row_type == "sub_mission":
+            normalized_header = normalize_name(raw_header)
+            df.at[row_index, "header"] = normalized_header
+
+            if prompt_headers:
+                add_prompt("conditions", normalized_header)
+        else:
+            normalized_header = normalize_name(raw_header)
+
+            if row_type == "dialogue":
+                resolve_speaker(row_index, normalized_header)
+            else:
+                df.at[row_index, "header"] = normalized_header
+
+        if prompt_variables:
+            for source in (raw_header, text):
+                for match in VARIABLE_RE.finditer(source):
+                    token = match.group(0)
+
+                    if "{RUBY#" in token or "{NON_BREAK_SPACE}" in token:
+                        continue
+
+                    add_prompt("variables", token)
+
+    return ClassificationResult(df=df, prompts=prompts, auto_localized=auto_localized)
+
+
+def apply_translations(
+    classified_df: pd.DataFrame, translations: dict[str, dict[str, str]]
+) -> None:
+    """Apply grouped prompt values to headers and text.
+
+    Replacements are intentionally scoped: speaker names only touch the
+    speaker cell, so translating ``Jeht`` cannot accidentally rewrite prose.
+    """
+
+    groups = {
+        key: {
+            original: translated.strip() or original
+            for original, translated in translations.get(key, {}).items()
+        }
+        for key in PROMPT_GROUP_KEYS
+    }
+
+    variables = sorted(groups["variables"].items(), key=lambda item: len(item[0]), reverse=True)
+
+    for row_index, row in classified_df.iterrows():
+        row_type = row["type"]
+        header = str(row["header"])
+        text = str(row["text"])
+
+        if row_type in SPEAKER_TYPES:
+            header = groups["speakers"].get(header, header)
+        elif row_type == "addopt":
+            header = groups["optional"].get(header, header)
+        elif row_type == "sub_mission":
+            header = groups["conditions"].get(header, header)
+        elif row_type == "location":
+            header = groups["locations"].get(header, header)
+        elif row_type in {"description", "objective"}:
+            header = groups["labels"].get(header, header)
+
+        for original, translated in variables:
+            if translated != original:
+                header = header.replace(original, translated)
+                text = text.replace(original, translated)
+
+        classified_df.at[row_index, "header"] = header
+        classified_df.at[row_index, "text"] = text
+
+
+def format_objective(objective_df: pd.DataFrame) -> str:
+    html_data = "<ol>"
+
+    for _, row in objective_df.iterrows():
+        header = "" if row.get("header") is None else str(row["header"]).strip()
+
+        if header:
+            html_data += "<li><p>%s</p></li>" % ("" if row.get("text") is None else row["text"])
+
+    html_data += "</ol>"
+
+    return html_data
+
+
+def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") -> str:
+    language_preset = preset if preset in {"EN", "RU"} else "EN"
+
+    html_data = ""
+    opened_tags: list[str] = []
+
+    for row_index, row in classified_dialogue_df.iterrows():
+        last_row_type = (
+            classified_dialogue_df.at[row_index - 1, "type"] if row_index > 0 else None
+        )
+        next_row_type = (
+            classified_dialogue_df.at[row_index + 1, "type"]
+            if row_index < (len(classified_dialogue_df) - 1)
+            else None
+        )
+
+        text = prepare_text(str(row["text"]))
+        header = str(row["header"])
+
+        match row["type"]:
+            case "description":
+                match language_preset:
+                    case "EN":
+                        html_data += """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong> %s</span></p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        """ % (header, text)
+                    case "RU":
+                        html_data += """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong></span>%s</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        """ % (header, text)
+            case "objective":
+                match language_preset:
+                    case "EN":
+                        html_data += """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p><strong>%s: </strong>%s</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        """ % (header, text)
+                    case "RU":
+                        html_data += """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong>%s</span></p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        """ % (header, text)
+            case "missing":
+                continue
+            case "addopt":
+                html_data += """
+                <p>%s</p>
+                <table>
+                    <tbody>
+                        <tr>
+                            <td colspan="1" rowspan="1">
+                """ % header
+
+                opened_tags.append("addopt")
+            case "choice_flag":
+                continue
+            case "choice_branch":
+                if last_row_type != "choice_flag":
+                    opened_tags.reverse()
+
+                    html_data += """
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    """
+
+                    if "choice_branch" in opened_tags:
+                        opened_tags.remove("choice_branch")
+
+                    opened_tags.reverse()
+
+                match language_preset:
+                    case "EN":
+                        html_data += """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p><span style="color: rgb(255, 255, 255);">%s: %s</span></p>
+                        """ % (header, text)
+                    case "RU":
+                        html_data += """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong>%s</span></p>
+                        """ % (header, text)
+
+                opened_tags.append("choice_branch")
+            case "location":
+                match language_preset:
+                    case "EN":
+                        html_data += """
+                        <p><span style="color: rgb(236, 229, 216);"><strong>%s</strong></span></p>
+                        """ % header
+                    case "RU":
+                        html_data += """
+                        <p><span style="color: rgb(255, 255, 255);"><strong>%s</strong></span></p>
+                        """ % header
+            case "dialogue":
+                if last_row_type == "objective":
+                    html_data += "<p></p>"
+
+                match language_preset:
+                    case "EN":
+                        html_data += """<p><span style="color: rgb(255, 255, 255);">%s: </span>%s</p>""" % (
+                            header,
+                            text,
+                        )
+                    case "RU":
+                        html_data += """
+                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong></span></p>
+                        <p>%s</p>
+                        """ % (header, text)
+            case "sub_mission":
+                if last_row_type == "objective":
+                    html_data += "<p></p>"
+
+                html_data += "<p><em>%s</em></p>" % header
+            case "action":
+                html_data += """
+                <p></p>
+                <table>
+                    <tbody>
+                        <tr>
+                            <td colspan="1" rowspan="1">
+                                <p><span style="color: rgb(255, 255, 255);">%s</span></p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p></p>
+                """ % text
+            case "blank":
+                if opened_tags and next_row_type != "choice_flag":
+                    match opened_tags[-1]:
+                        case "addopt" | "choice_branch":
+                            html_data += """
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            """
+
+                            opened_tags.pop()
+
+                if next_row_type != "choice_branch":
+                    html_data += "<p></p>"
+
+    if opened_tags:
+        for tag in reversed(opened_tags):
+            match tag:
+                case "addopt" | "choice_branch":
+                    html_data += """
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    """
+
+                    opened_tags.pop()
+
+    return html_data
+
+
+def prepare_text(text: str) -> str:
+    text = RUBY_RE.sub(_replace_ruby, text)
+    return text.replace("{NON_BREAK_SPACE}", "&nbsp;")
+
+
+def _replace_ruby(match: re.Match[str]) -> str:
+    base_text = html.escape(match.group(1) + match.group(3))
+    ruby_text = html.escape(match.group(2))
+
+    return """<custom-ruby data-ruby="%s|%s"></custom-ruby>""" % (base_text, ruby_text)
+
+
+def _prepare_frame(dialogue_df: pd.DataFrame) -> pd.DataFrame:
+    frame = dialogue_df.copy()
+
+    if "type" in frame.columns:
+        frame = frame.drop(columns=["type"])
+
+    for column in ("header", "text"):
+        if column not in frame.columns:
+            frame[column] = ""
+
+    frame = frame[["header", "text"]].fillna("").astype(str)
+    frame = frame.reset_index(drop=True)
+    frame.insert(0, "type", "")
+
+    return frame
