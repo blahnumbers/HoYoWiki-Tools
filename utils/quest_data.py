@@ -4,8 +4,11 @@ The expected layout matches the sheets produced by the Quest Team:
 
 * Column A holds the English key (speaker name, section label, ...).
 * The first row holds language codes, starting in column B.
-* A ``Dialogue`` section starts with a ``Special Speaker`` sub-section that
-  lists display names and their translations.
+* A ``Dialogue`` section holds the dialogue rows.
+* A ``Translation`` section may hold ``Special Speaker``, ``Location`` and
+  ``Field Label`` sub-sections. These sub-sections can appear in any order,
+  can be missing, and are also accepted directly inside the ``Dialogue``
+  section (the older layout).
 
 The parser deliberately keeps every language it finds so the page can offer
 the user a target language picker.
@@ -43,6 +46,12 @@ LANGUAGE_CODE_RE = re.compile(r"^[A-Z]{2,3}(?:[-_][A-Z]{2,4})?$")
 OBJECTIVE_KEY_RE = re.compile(r"^\d+(?:\.0+)?$")
 NAME_WHITESPACE_RE = re.compile(r"\s+")
 
+TRANSLATION_SEGMENT_KEYS = {
+    "special speaker": "special_speakers",
+    "location": "locations",
+    "field label": "field_labels",
+}
+
 
 class QuestDataError(ValueError):
     """Raised when a quest data file cannot be understood."""
@@ -61,6 +70,8 @@ class QuestData:
     titles: dict[str, str]
     objectives: list[dict[str, str]]
     special_speakers: list[dict[str, str]]
+    locations: list[dict[str, str]]
+    field_labels: list[dict[str, str]]
     dialogue_rows: list[dict[str, str]]
 
     def title_for(self, language: str) -> str:
@@ -85,28 +96,26 @@ class QuestData:
     def speaker_map(self, language: str) -> dict[str, str]:
         """Return ``English name -> localized name`` from ``Special Speaker``."""
 
-        speaker_map: dict[str, str] = {}
+        return self._map_from_entries(self.special_speakers, language)
 
-        for entry in self.special_speakers:
-            english_name = normalize_name(entry.get("EN", ""))
-            localized_name = normalize_name(entry.get(language, ""))
+    def location_map(self, language: str) -> dict[str, str]:
+        """Return ``English name -> localized name`` from ``Location``."""
 
-            if english_name and localized_name:
-                speaker_map.setdefault(english_name, localized_name)
+        return self._map_from_entries(self.locations, language)
 
-        return speaker_map
+    def field_label_map(self, language: str) -> dict[str, str]:
+        """Return ``English label -> localized label`` from ``Field Label``."""
+
+        return self._map_from_entries(self.field_labels, language)
 
     def special_speaker_pairs(self, language: str) -> list[tuple[str, str]]:
-        pairs = []
+        return self._translation_pairs(self.special_speakers, language)
 
-        for entry in self.special_speakers:
-            english_name = normalize_name(entry.get("EN", ""))
-            localized_name = normalize_name(entry.get(language, ""))
+    def location_pairs(self, language: str) -> list[tuple[str, str]]:
+        return self._translation_pairs(self.locations, language)
 
-            if english_name:
-                pairs.append((english_name, localized_name))
-
-        return pairs
+    def field_label_pairs(self, language: str) -> list[tuple[str, str]]:
+        return self._translation_pairs(self.field_labels, language)
 
     def missing_translations(self, language: str) -> list[dict[str, str]]:
         """Rows that have English text but no text in ``language``."""
@@ -118,9 +127,48 @@ class QuestData:
         ]
 
     def missing_special_translations(self, language: str) -> list[dict[str, str]]:
+        return self._missing_entries(self.special_speakers, language)
+
+    def missing_location_translations(self, language: str) -> list[dict[str, str]]:
+        return self._missing_entries(self.locations, language)
+
+    def missing_field_label_translations(self, language: str) -> list[dict[str, str]]:
+        return self._missing_entries(self.field_labels, language)
+
+    def _map_from_entries(
+        self, entries: list[dict[str, str]], language: str
+    ) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+
+        for entry in entries:
+            english_key = normalize_name(entry.get("EN", ""))
+            localized_value = normalize_name(entry.get(language, ""))
+
+            if english_key and localized_value:
+                mapping.setdefault(english_key, localized_value)
+
+        return mapping
+
+    def _translation_pairs(
+        self, entries: list[dict[str, str]], language: str
+    ) -> list[tuple[str, str]]:
+        pairs = []
+
+        for entry in entries:
+            english_key = normalize_name(entry.get("EN", ""))
+            localized_value = normalize_name(entry.get(language, ""))
+
+            if english_key:
+                pairs.append((english_key, localized_value))
+
+        return pairs
+
+    def _missing_entries(
+        self, entries: list[dict[str, str]], language: str
+    ) -> list[dict[str, str]]:
         return [
             entry
-            for entry in self.special_speakers
+            for entry in entries
             if normalize_name(entry.get("EN", "")) and not normalize_name(entry.get(language, ""))
         ]
 
@@ -141,21 +189,15 @@ def parse_quest_file(file_bytes: bytes, file_name: str) -> QuestData:
             "Make sure the file follows the Quest Team localization sheet format."
         )
 
-    special_header_index = _find_header(rows, "Special Speaker", dialogue_header_index)
-
-    if special_header_index is None:
-        special_speakers: list[dict[str, str]] = []
-        dialogue_start_index = dialogue_header_index + 1
-    else:
-        special_speakers, dialogue_start_index = _parse_special_speakers(
-            rows, special_header_index, language_columns
-        )
+    translation_segments, excluded_rows = _parse_translation_segments(
+        rows, language_columns
+    )
 
     objectives = _parse_objectives(
-        rows, language_columns, dialogue_header_index
+        rows, language_columns, dialogue_header_index, excluded_rows
     )
     dialogue_rows = _parse_dialogue_rows(
-        rows, language_columns, dialogue_start_index
+        rows, language_columns, dialogue_header_index + 1, excluded_rows
     )
     titles = _parse_title(rows, language_columns, language_row_index)
 
@@ -164,7 +206,9 @@ def parse_quest_file(file_bytes: bytes, file_name: str) -> QuestData:
         languages=languages,
         titles=titles,
         objectives=objectives,
-        special_speakers=special_speakers,
+        special_speakers=translation_segments["special_speakers"],
+        locations=translation_segments["locations"],
+        field_labels=translation_segments["field_labels"],
         dialogue_rows=dialogue_rows,
     )
 
@@ -239,6 +283,10 @@ def _cell_text(value: object) -> str:
     return str(value)
 
 
+def _first_cell(row: list[str]) -> str:
+    return row[0] if row else ""
+
+
 def _find_language_row(rows: list[list[str]]) -> tuple[int, dict[str, int]]:
     for row_index, row in enumerate(rows[:10]):
         language_columns: dict[str, int] = {}
@@ -261,7 +309,7 @@ def _find_header(rows: list[list[str]], label: str, start_index: int = 0) -> int
     normalized_label = label.strip().casefold()
 
     for row_index in range(start_index, len(rows)):
-        if rows[row_index][0].strip().casefold() == normalized_label:
+        if _first_cell(rows[row_index]).strip().casefold() == normalized_label:
             return row_index
 
     return None
@@ -285,29 +333,64 @@ def _parse_title(
     return _row_values(rows[title_index], language_columns)
 
 
-def _parse_special_speakers(
+def _parse_translation_segments(
+    rows: list[list[str]], language_columns: dict[str, int]
+) -> tuple[dict[str, list[dict[str, str]]], set[int]]:
+    segments: dict[str, list[dict[str, str]]] = {
+        "special_speakers": [],
+        "locations": [],
+        "field_labels": [],
+    }
+    excluded_rows: set[int] = set()
+
+    for row_index, row in enumerate(rows):
+        header = _first_cell(row).strip().casefold()
+
+        if header == "translation":
+            excluded_rows.add(row_index)
+            continue
+
+        segment_key = TRANSLATION_SEGMENT_KEYS.get(header)
+
+        if segment_key is None:
+            continue
+
+        excluded_rows.add(row_index)
+
+        entries, end_index = _parse_segment_entries(
+            rows, row_index, language_columns
+        )
+
+        segments[segment_key].extend(entries)
+        excluded_rows.update(range(row_index + 1, end_index))
+
+    return segments, excluded_rows
+
+
+def _parse_segment_entries(
     rows: list[list[str]], header_index: int, language_columns: dict[str, int]
 ) -> tuple[list[dict[str, str]], int]:
     entries: list[dict[str, str]] = []
     row_index = header_index + 1
 
     while row_index < len(rows):
-        key = rows[row_index][0].strip()
+        row = rows[row_index]
 
         # A non-empty key means the next section has started.
-        if key:
+        if _first_cell(row).strip():
             break
 
-        values = _row_values(rows[row_index], language_columns)
-        english_name = normalize_name(values.get("EN", ""))
+        # A blank row separates the segment from the next one.
+        if not any(value.strip() for value in row):
+            break
 
-        if english_name:
-            entry = {"row": str(row_index + 1), "key": english_name}
+        values = _row_values(row, language_columns)
+        english_key = normalize_name(values.get("EN", ""))
+
+        if english_key:
+            entry = {"row": str(row_index + 1), "key": english_key}
             entry.update(values)
             entries.append(entry)
-        elif entries and not any(value.strip() for value in rows[row_index]):
-            # The blank row between the speaker block and the dialogue rows.
-            break
 
         row_index += 1
 
@@ -315,7 +398,10 @@ def _parse_special_speakers(
 
 
 def _parse_objectives(
-    rows: list[list[str]], language_columns: dict[str, int], dialogue_header_index: int
+    rows: list[list[str]],
+    language_columns: dict[str, int],
+    dialogue_header_index: int,
+    excluded_rows: set[int],
 ) -> list[dict[str, str]]:
     objectives_header_index = _find_header(rows, "Quest Objectives")
 
@@ -325,7 +411,10 @@ def _parse_objectives(
     entries: list[dict[str, str]] = []
 
     for row_index in range(objectives_header_index + 1, dialogue_header_index):
-        key = rows[row_index][0].strip()
+        if row_index in excluded_rows:
+            continue
+
+        key = _first_cell(rows[row_index]).strip()
 
         if not OBJECTIVE_KEY_RE.fullmatch(key):
             continue
@@ -346,24 +435,33 @@ def _parse_objectives(
 
 
 def _parse_dialogue_rows(
-    rows: list[list[str]], language_columns: dict[str, int], start_index: int
+    rows: list[list[str]],
+    language_columns: dict[str, int],
+    start_index: int,
+    excluded_rows: set[int],
 ) -> list[dict[str, str]]:
     entries: list[dict[str, str]] = []
 
-    while start_index < len(rows) and not any(
-        value.strip() for value in rows[start_index]
-    ):
-        start_index += 1
-
     for row_index in range(start_index, len(rows)):
-        values = _row_values(rows[row_index], language_columns)
-        entry = {"row": str(row_index + 1), "key": rows[row_index][0].strip()}
+        if row_index in excluded_rows:
+            continue
+
+        row = rows[row_index]
+        values = _row_values(row, language_columns)
+        entry = {"row": str(row_index + 1), "key": _first_cell(row).strip()}
         entry.update(values)
         entries.append(entry)
 
-    while entries and not entries[-1]["key"] and not any(
-        normalize_name(entries[-1].get(code, "")) for code in language_columns
-    ):
+    while entries and _is_blank_entry(entries[0], language_columns):
+        entries.pop(0)
+
+    while entries and _is_blank_entry(entries[-1], language_columns):
         entries.pop()
 
     return entries
+
+
+def _is_blank_entry(entry: dict[str, str], language_columns: dict[str, int]) -> bool:
+    return not entry["key"] and not any(
+        normalize_name(entry.get(code, "")) for code in language_columns
+    )

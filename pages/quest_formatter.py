@@ -34,6 +34,8 @@ def _handle_dialogue(
     dialogue_df: pd.DataFrame,
     preset: str,
     speaker_map: dict[str, str] | None = None,
+    location_map: dict[str, str] | None = None,
+    field_label_map: dict[str, str] | None = None,
     target: str = "EN",
     prompt_variables: bool = True,
     prompt_headers: bool = True,
@@ -41,6 +43,8 @@ def _handle_dialogue(
     result = quest_format.classify_dialogue(
         dialogue_df,
         speaker_map = speaker_map,
+        location_map = location_map,
+        field_label_map = field_label_map,
         prompt_variables = prompt_variables,
         prompt_headers = prompt_headers,
     )
@@ -75,14 +79,16 @@ def translation_dialog() -> None:
         "value shown. Press `Format` when you are done."
     )
 
-    if result.auto_localized:
-        pairs = ", ".join(
-            "%s → %s" % (english_name, localized_name)
-            for english_name, localized_name in result.auto_localized.items()
-        )
+    has_prefilled_values = any(
+        value and value != key
+        for group in ("speakers", "locations", "labels")
+        for key, value in (result.defaults.get(group) or {}).items()
+    )
+
+    if has_prefilled_values:
         st.caption(
-            "Speaker names taken from the file's `Special Speaker` section are "
-            "prefilled below so they can be adjusted if needed: %s" % pairs
+            "Values provided by the file's `Translation` section are prefilled "
+            "below and can be adjusted before formatting."
         )
 
     entered_values: dict[str, dict[str, str]] = {}
@@ -127,8 +133,9 @@ def _render_import_mode() -> None:
         key = "quest_formatter_file",
         help = (
             "The file must follow the Quest Team localization sheet format: keys in "
-            "column A, language codes in the first row, and a Dialogue section with a "
-            "Special Speaker block."
+            "column A, language codes in the first row, a Dialogue section, and an "
+            "optional Translation section with Special Speaker, Location and/or "
+            "Field Label blocks."
         ),
     )
 
@@ -165,11 +172,14 @@ def _render_import_mode() -> None:
         st.markdown("**%s**" % title)
 
     st.caption(
-        "%d objectives · %d dialogue rows · %d special speaker name(s)"
+        "%d objectives · %d dialogue rows · %d special speaker(s) · "
+        "%d location(s) · %d field label(s)"
         % (
             len(quest.objectives),
             len(quest.dialogue_rows),
             len(quest.special_speakers),
+            len(quest.locations),
+            len(quest.field_labels),
         )
     )
 
@@ -191,31 +201,42 @@ def _render_import_mode() -> None:
             icon = ":material/warning:",
         )
 
-    missing_special_speakers = quest.missing_special_translations(target_language)
+    missing_segments = (
+        ("Special Speaker", quest.missing_special_translations(target_language)),
+        ("Location", quest.missing_location_translations(target_language)),
+        ("Field Label", quest.missing_field_label_translations(target_language)),
+    )
+    missing_parts = []
 
-    if missing_special_speakers:
-        missing_names = ", ".join(
-            entry["key"] for entry in missing_special_speakers[:10]
-        )
+    for segment_name, entries in missing_segments:
+        if entries:
+            missing_keys = ", ".join(entry["key"] for entry in entries[:10])
+            missing_parts.append("%s: %s" % (segment_name, missing_keys))
 
+    if missing_parts:
         st.info(
-            "These Special Speaker names have no %s translation and will be requested "
-            "manually: %s" % (target_language, missing_names),
+            "These Translation entries have no %s text and will be requested "
+            "manually: %s" % (target_language, "; ".join(missing_parts)),
             icon = ":material/translate:",
         )
 
     with st.expander("Preview Imported Data"):
-        special_speaker_pairs = quest.special_speaker_pairs(target_language)
+        translation_tables = (
+            ("Special Speaker", quest.special_speaker_pairs(target_language)),
+            ("Location", quest.location_pairs(target_language)),
+            ("Field Label", quest.field_label_pairs(target_language)),
+        )
 
-        if special_speaker_pairs:
-            st.markdown("**Special Speaker**")
-            st.dataframe(
-                pd.DataFrame(
-                    special_speaker_pairs,
-                    columns = ["English Key", "Localized Name"],
-                ),
-                hide_index = True,
-            )
+        for segment_name, pairs in translation_tables:
+            if pairs:
+                st.markdown("**%s**" % segment_name)
+                st.dataframe(
+                    pd.DataFrame(
+                        pairs,
+                        columns = ["English Key", "Localized Name"],
+                    ),
+                    hide_index = True,
+                )
 
         st.markdown("**Objectives**")
         st.dataframe(
@@ -283,6 +304,8 @@ def _render_import_mode() -> None:
                 dialogue_df,
                 preset = preset,
                 speaker_map = quest.speaker_map(target_language),
+                location_map = quest.location_map(target_language),
+                field_label_map = quest.field_label_map(target_language),
                 target = target_language,
                 prompt_variables = False,
                 prompt_headers = target_language != "EN",
@@ -442,7 +465,7 @@ with st.expander("How to Use"):
     """)
 
     st.caption("""
-    Speaker names listed in the file's `Special Speaker` section are localized automatically. Conditional strings, optional sections, locations and any names not present there still require manual input.
+    Values provided in the file's `Translation` section (`Special Speaker`, `Location`, `Field Label`) are prefilled automatically and can still be adjusted. Conditional strings, optional sections, and any missing values require manual input.
     """)
 
     st.subheader("To Format Quest Objective (Paste)")

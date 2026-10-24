@@ -21,8 +21,8 @@ PROMPT_GROUPS = (
     (
         "speakers",
         "Speaker Names",
-        "Speakers that are not covered by the file's Special Speaker list. "
-        "Enter their localized display name.",
+        "Speaker display names. Values from the file's Special Speaker list are "
+        "prefilled; adjust them if needed.",
     ),
     (
         "conditions",
@@ -38,12 +38,14 @@ PROMPT_GROUPS = (
     (
         "locations",
         "Locations",
-        "Location headers shown before a scene.",
+        "Location headers shown before a scene. Values from the file's Location "
+        "list are prefilled; adjust them if needed.",
     ),
     (
         "labels",
         "Field Labels",
-        "Labels used for quest descriptions and quest objectives in the output.",
+        "Labels used for quest descriptions and quest objectives in the output. "
+        "Values from the file's Field Label list are prefilled.",
     ),
     (
         "variables",
@@ -120,21 +122,34 @@ def classify_row(header: str, text: str) -> str:
 def classify_dialogue(
     dialogue_df: pd.DataFrame,
     speaker_map: dict[str, str] | None = None,
+    location_map: dict[str, str] | None = None,
+    field_label_map: dict[str, str] | None = None,
     prompt_variables: bool = True,
     prompt_headers: bool = True,
 ) -> ClassificationResult:
     """Classify dialogue rows and collect the values that need user input.
 
-    ``speaker_map`` maps English speaker keys to localized names (usually
-    taken from the ``Special Speaker`` section of an imported file). Speakers
-    found in the map are localized automatically. Every other speaker and
-    header is collected into a prompt group.
+    ``speaker_map``, ``location_map`` and ``field_label_map`` map English keys
+    to localized values (usually taken from the file's ``Translation``
+    section). Matching values are prefilled in the prompt groups so the user
+    can still adjust them. Every other header is collected into a prompt
+    group as well.
     """
 
     df = _prepare_frame(dialogue_df)
     normalized_speaker_map = {
         normalize_name(key): normalize_name(value)
         for key, value in (speaker_map or {}).items()
+        if normalize_name(key) and normalize_name(value)
+    }
+    normalized_location_map = {
+        normalize_name(key): normalize_name(value)
+        for key, value in (location_map or {}).items()
+        if normalize_name(key) and normalize_name(value)
+    }
+    normalized_field_label_map = {
+        normalize_name(key): normalize_name(value)
+        for key, value in (field_label_map or {}).items()
         if normalize_name(key) and normalize_name(value)
     }
 
@@ -171,15 +186,25 @@ def classify_dialogue(
         df.at[row_index, "type"] = row_type
 
         if row_type == "description":
-            df.at[row_index, "header"] = "Quest Description"
+            label = "Quest Description"
+            df.at[row_index, "header"] = label
+            localized_label = normalized_field_label_map.get(label)
+
+            if localized_label:
+                defaults["labels"][label] = localized_label
 
             if prompt_headers:
-                add_prompt("labels", "Quest Description", "Quest Description")
+                add_prompt("labels", label, localized_label or label)
         elif row_type == "objective":
-            df.at[row_index, "header"] = "Quest Objective"
+            label = "Quest Objective"
+            df.at[row_index, "header"] = label
+            localized_label = normalized_field_label_map.get(label)
+
+            if localized_label:
+                defaults["labels"][label] = localized_label
 
             if prompt_headers:
-                add_prompt("labels", "Quest Objective", "Quest Objective")
+                add_prompt("labels", label, localized_label or label)
         elif row_type == "addopt":
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header
@@ -192,9 +217,17 @@ def classify_dialogue(
         elif row_type == "location":
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header
+            localized_location = normalized_location_map.get(normalized_header)
+
+            if localized_location:
+                defaults["locations"][normalized_header] = localized_location
 
             if prompt_headers:
-                add_prompt("locations", normalized_header, normalized_header)
+                add_prompt(
+                    "locations",
+                    normalized_header,
+                    localized_location or normalized_header,
+                )
         elif row_type == "sub_mission":
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header

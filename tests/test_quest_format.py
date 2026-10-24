@@ -127,6 +127,33 @@ class ClassifyDialogueTests(unittest.TestCase):
         result_without_variables = self._classify(prompt_variables = False)
         self.assertEqual(result_without_variables.prompts["variables"], {})
 
+    def test_prefills_location_and_field_label_translations(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(DIALOGUE_ROWS),
+            speaker_map = {"Jeht": "Джехт"},
+            location_map = {"Treasure Street, Sumeru": "Улица Сокровищ, Сумеру"},
+            field_label_map = {
+                "Quest Objective": "Цель задания",
+                "Quest Description": "Описание задания",
+            },
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["locations"]["Treasure Street, Sumeru"],
+            "Улица Сокровищ, Сумеру",
+        )
+        self.assertEqual(result.defaults["labels"]["Quest Objective"], "Цель задания")
+        self.assertEqual(result.defaults["labels"]["Quest Description"], "Описание задания")
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
+        headers = set(result.df["header"])
+
+        self.assertIn("Улица Сокровищ, Сумеру", headers)
+        self.assertIn("Цель задания", headers)
+        self.assertIn("Описание задания", headers)
+
     def test_classifying_twice_replaces_the_type_column(self) -> None:
         result = self._classify()
         second_result = quest_format.classify_dialogue(result.df, speaker_map = {"Jeht": "Джехт"})

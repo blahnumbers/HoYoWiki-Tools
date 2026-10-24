@@ -44,8 +44,11 @@ class QuestDataParsingTests(unittest.TestCase):
         self.temporary_directory.cleanup()
 
     def _write_xlsx(self) -> Path:
-        path = self.directory / "fixture.xlsx"
-        pd.DataFrame(FIXTURE_ROWS).to_excel(path, index=False, header=False)
+        return self._write_rows(FIXTURE_ROWS, "fixture.xlsx")
+
+    def _write_rows(self, rows: list[list[object]], name: str) -> Path:
+        path = self.directory / name
+        pd.DataFrame(rows).to_excel(path, index=False, header=False)
         return path
 
     def _write_csv(self) -> Path:
@@ -95,6 +98,95 @@ class QuestDataParsingTests(unittest.TestCase):
 
         missing_special = [entry["key"] for entry in quest.missing_special_translations("RU")]
         self.assertEqual(missing_special, ["Messenger"])
+
+    def test_parses_translation_segments_after_dialogue_in_any_order(self) -> None:
+        rows = [
+            [" ", "EN", "RU", "JP"],
+            ["Title", "Test Quest", "Тестовое задание", "テスト"],
+            ["Quest Objectives"],
+            [1, "Objective one", "Задание один", "目標一"],
+            ["Dialogue"],
+            ["Katheryne", "Hello", "Привет", "こんにちは"],
+            ["Treasures Street, Sumeru"],
+            ["Quest Objective", "Objective line", "Строка задания", "目標行"],
+            ["Translation"],
+            ["Field Label"],
+            ["", "Quest Objective", "Цель задания", "目標"],
+            ["", "Quest Description", "Описание задания", "説明"],
+            ["Location"],
+            ["", "Treasures Street, Sumeru", "Улица Сокровищ, Сумеру", "トレジャーストリート"],
+            ["Special Speaker"],
+            ["", "Katheryne", "Катерина", "キャサリン"],
+            ["", "Traveler", "Путешественник", "旅人"],
+        ]
+        path = self._write_rows(rows, "translation-after.xlsx")
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+
+        self.assertEqual(quest.languages, ["EN", "RU", "JP"])
+        self.assertEqual([entry["key"] for entry in quest.objectives], ["1"])
+        self.assertEqual(
+            [entry["key"] for entry in quest.dialogue_rows],
+            ["Katheryne", "Treasures Street, Sumeru", "Quest Objective"],
+        )
+        self.assertEqual(
+            [entry["key"] for entry in quest.special_speakers],
+            ["Katheryne", "Traveler"],
+        )
+        self.assertEqual(
+            [entry["key"] for entry in quest.locations],
+            ["Treasures Street, Sumeru"],
+        )
+        self.assertEqual(
+            [entry["key"] for entry in quest.field_labels],
+            ["Quest Objective", "Quest Description"],
+        )
+        self.assertEqual(quest.speaker_map("RU")["Katheryne"], "Катерина")
+        self.assertEqual(quest.speaker_map("JP")["Katheryne"], "キャサリン")
+        self.assertEqual(
+            quest.location_map("RU")["Treasures Street, Sumeru"],
+            "Улица Сокровищ, Сумеру",
+        )
+        self.assertEqual(
+            quest.field_label_map("RU")["Quest Objective"],
+            "Цель задания",
+        )
+
+    def test_parses_translation_segments_inside_dialogue(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Dialogue"],
+            ["Location"],
+            ["", "Treasures Street, Sumeru", "Улица Сокровищ, Сумеру"],
+            ["Field Label"],
+            ["", "Quest Objective", "Цель задания"],
+            ["Special Speaker"],
+            ["", "Katheryne", "Катерина"],
+            ["Katheryne", "Hello", "Привет"],
+        ]
+        path = self._write_rows(rows, "translation-inside.xlsx")
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+
+        self.assertEqual([entry["key"] for entry in quest.dialogue_rows], ["Katheryne"])
+        self.assertEqual([entry["key"] for entry in quest.locations], ["Treasures Street, Sumeru"])
+        self.assertEqual([entry["key"] for entry in quest.field_labels], ["Quest Objective"])
+        self.assertEqual([entry["key"] for entry in quest.special_speakers], ["Katheryne"])
+
+    def test_translation_segments_are_optional(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Dialogue"],
+            ["Katheryne", "Hello", "Привет"],
+        ]
+        path = self._write_rows(rows, "no-translation.xlsx")
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+
+        self.assertEqual([entry["key"] for entry in quest.dialogue_rows], ["Katheryne"])
+        self.assertEqual(quest.special_speakers, [])
+        self.assertEqual(quest.locations, [])
+        self.assertEqual(quest.field_labels, [])
 
     def test_rejects_file_without_language_row(self) -> None:
         rows = [["Title", "Test"], ["Dialogue"], ["Katheryne", "Hello"]]
