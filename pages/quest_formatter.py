@@ -53,6 +53,7 @@ def _handle_dialogue(
         }
         translation_dialog()
     else:
+        quest_format.apply_translations(result.df, {}, result.defaults)
         _set_output(quest_format.format_dialogue(result.df, preset))
 
 
@@ -70,8 +71,8 @@ def translation_dialog() -> None:
 
     st.markdown(
         "Review the fields below. Values are grouped so speaker names stay separate "
-        "from conditional strings and other headers. Fields left unchanged keep their "
-        "original English value. Press `Format` when you are done."
+        "from conditional strings and other headers. Fields left unchanged keep the "
+        "value shown. Press `Format` when you are done."
     )
 
     if result.auto_localized:
@@ -79,7 +80,10 @@ def translation_dialog() -> None:
             "%s → %s" % (english_name, localized_name)
             for english_name, localized_name in result.auto_localized.items()
         )
-        st.caption("Auto-localized from the file's `Special Speaker` section: %s" % pairs)
+        st.caption(
+            "Speaker names taken from the file's `Special Speaker` section are "
+            "prefilled below so they can be adjusted if needed: %s" % pairs
+        )
 
     entered_values: dict[str, dict[str, str]] = {}
 
@@ -93,11 +97,12 @@ def translation_dialog() -> None:
         st.caption(group_description)
 
         group_values: dict[str, str] = {}
+        group_defaults = result.defaults.get(group_key) or {}
 
         for original, count in items.items():
             group_values[original] = st.text_input(
                 original,
-                value = original,
+                value = group_defaults.get(original, original),
                 key = _translation_key(target, group_key, original),
                 help = ("Used in %d rows" % count) if count > 1 else None,
             )
@@ -108,7 +113,7 @@ def translation_dialog() -> None:
 
     if st.button("Format", type = "primary", key = "quest_formatter_apply_translations"):
         with st.spinner("Formatting...", show_time = True):
-            quest_format.apply_translations(result.df, entered_values)
+            quest_format.apply_translations(result.df, entered_values, result.defaults)
             _set_output(quest_format.format_dialogue(result.df, preset))
             st.session_state[PENDING_KEY] = None
 
@@ -139,6 +144,8 @@ def _render_import_mode() -> None:
     except QuestDataError as error:
         st.error("Could not read this file: %s" % error)
         st.stop()
+
+    file_token = hashlib.sha1(imported_file.getvalue()).hexdigest()[:10]
 
     if st.session_state.get(TARGET_LANGUAGE_KEY) not in quest.languages:
         st.session_state[TARGET_LANGUAGE_KEY] = (
@@ -227,30 +234,51 @@ def _render_import_mode() -> None:
 
     st.caption("Output markup preset: `%s` (auto-selected from the target language)" % preset)
 
+    import_table_config = {
+        "header": st.column_config.TextColumn("Row Header", width = "small"),
+        "text": st.column_config.TextColumn("Text", width = "large"),
+    }
+
     objective_tab, dialogue_tab = st.tabs(["Objective", "Dialogue"])
 
     with objective_tab:
-        objective_df = quest.objective_dataframe(target_language)
+        st.caption("Imported data is editable. Changes made here are used when formatting.")
 
-        st.dataframe(objective_df, hide_index = True)
+        objective_df = st.data_editor(
+            quest.objective_dataframe(target_language),
+            column_config = import_table_config,
+            num_rows = "dynamic",
+            hide_index = True,
+            key = "import_objective_data_%s_%s" % (file_token, target_language),
+        )
 
         if st.button(
             "Format Objectives",
             type = "primary",
             key = "format_objective_button_import",
         ):
+            objective_df.fillna("", inplace = True)
             _set_output(quest_format.format_objective(objective_df))
 
     with dialogue_tab:
-        dialogue_df = quest.dialogue_dataframe(target_language)
+        st.caption("Imported data is editable. Changes made here are used when formatting.")
 
-        st.dataframe(dialogue_df, hide_index = True, height = 360)
+        dialogue_df = st.data_editor(
+            quest.dialogue_dataframe(target_language),
+            column_config = import_table_config,
+            num_rows = "dynamic",
+            hide_index = True,
+            height = 360,
+            key = "import_dialogue_data_%s_%s" % (file_token, target_language),
+        )
 
         if st.button(
             "Format Dialogue",
             type = "primary",
             key = "format_dialogue_button_import",
         ):
+            dialogue_df.fillna("", inplace = True)
+
             _handle_dialogue(
                 dialogue_df,
                 preset = preset,
@@ -332,10 +360,47 @@ def _render_output() -> None:
     <script>
     async function copyHTML() {
         const html = %s;
+
+        // execCommand copies both rich text and a plain-text fallback, and
+        // works reliably from inside Streamlit's component iframe.
+        const container = document.createElement("div");
+        container.contentEditable = "true";
+        container.style.position = "fixed";
+        container.style.left = "-9999px";
+        container.style.top = "0";
+        container.innerHTML = html;
+        document.body.appendChild(container);
+
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(container);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        let copied = false;
         try {
+            copied = document.execCommand("copy");
+        } catch (err) {
+            copied = false;
+        }
+
+        selection.removeAllRanges();
+        container.remove();
+
+        if (copied) {
+            alert("Copy successful!");
+            return;
+        }
+
+        try {
+            const textContainer = document.createElement("div");
+            textContainer.innerHTML = html;
+            const plainText = textContainer.innerText;
+
             await navigator.clipboard.write([
                 new ClipboardItem({
-                    "text/html": new Blob([html], { type: "text/html" })
+                    "text/html": new Blob([html], { type: "text/html" }),
+                    "text/plain": new Blob([plainText], { type: "text/plain" })
                 })
             ]);
             alert("Copy successful!");

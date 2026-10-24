@@ -66,6 +66,7 @@ class ClassificationResult:
     df: pd.DataFrame
     prompts: dict[str, dict[str, int]] = field(default_factory=dict)
     auto_localized: dict[str, str] = field(default_factory=dict)
+    defaults: dict[str, dict[str, str]] = field(default_factory=dict)
 
     @property
     def has_prompts(self) -> bool:
@@ -138,11 +139,13 @@ def classify_dialogue(
     }
 
     prompts: dict[str, dict[str, int]] = {key: {} for key in PROMPT_GROUP_KEYS}
+    defaults: dict[str, dict[str, str]] = {key: {} for key in PROMPT_GROUP_KEYS}
     auto_localized: dict[str, str] = {}
 
-    def add_prompt(group: str, value: str) -> None:
+    def add_prompt(group: str, value: str, default: str | None = None) -> None:
         if value:
             prompts[group][value] = prompts[group].get(value, 0) + 1
+            defaults[group].setdefault(value, value if default is None else default)
 
     def resolve_speaker(row_index: int, speaker: str) -> None:
         df.at[row_index, "header"] = speaker
@@ -150,12 +153,15 @@ def classify_dialogue(
         localized_name = normalized_speaker_map.get(speaker)
 
         if localized_name:
-            df.at[row_index, "header"] = localized_name
+            defaults["speakers"][speaker] = localized_name
 
             if localized_name != speaker:
                 auto_localized[speaker] = localized_name
+
+            if prompt_headers:
+                add_prompt("speakers", speaker, localized_name)
         elif prompt_headers:
-            add_prompt("speakers", speaker)
+            add_prompt("speakers", speaker, speaker)
 
     for row_index, row in df.iterrows():
         raw_header = str(row["header"]).strip()
@@ -168,18 +174,18 @@ def classify_dialogue(
             df.at[row_index, "header"] = "Quest Description"
 
             if prompt_headers:
-                add_prompt("labels", "Quest Description")
+                add_prompt("labels", "Quest Description", "Quest Description")
         elif row_type == "objective":
             df.at[row_index, "header"] = "Quest Objective"
 
             if prompt_headers:
-                add_prompt("labels", "Quest Objective")
+                add_prompt("labels", "Quest Objective", "Quest Objective")
         elif row_type == "addopt":
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header
 
             if prompt_headers:
-                add_prompt("optional", normalized_header)
+                add_prompt("optional", normalized_header, normalized_header)
         elif row_type == "choice_branch":
             speaker = normalize_name(CHOICE_PREFIX_RE.sub("", raw_header))
             resolve_speaker(row_index, speaker)
@@ -188,13 +194,13 @@ def classify_dialogue(
             df.at[row_index, "header"] = normalized_header
 
             if prompt_headers:
-                add_prompt("locations", normalized_header)
+                add_prompt("locations", normalized_header, normalized_header)
         elif row_type == "sub_mission":
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header
 
             if prompt_headers:
-                add_prompt("conditions", normalized_header)
+                add_prompt("conditions", normalized_header, normalized_header)
         else:
             normalized_header = normalize_name(raw_header)
 
@@ -211,27 +217,45 @@ def classify_dialogue(
                     if "{RUBY#" in token or "{NON_BREAK_SPACE}" in token:
                         continue
 
-                    add_prompt("variables", token)
+                    add_prompt("variables", token, token)
 
-    return ClassificationResult(df=df, prompts=prompts, auto_localized=auto_localized)
+    return ClassificationResult(
+        df=df,
+        prompts=prompts,
+        auto_localized=auto_localized,
+        defaults=defaults,
+    )
 
 
 def apply_translations(
-    classified_df: pd.DataFrame, translations: dict[str, dict[str, str]]
+    classified_df: pd.DataFrame,
+    translations: dict[str, dict[str, str]],
+    defaults: dict[str, dict[str, str]] | None = None,
 ) -> None:
     """Apply grouped prompt values to headers and text.
 
+    Values provided in ``defaults`` (for example the auto-localized Special
+    Speaker names) are used when a group is not present in ``translations``.
     Replacements are intentionally scoped: speaker names only touch the
     speaker cell, so translating ``Jeht`` cannot accidentally rewrite prose.
     """
 
-    groups = {
-        key: {
+    defaults = defaults or {}
+
+    groups = {}
+
+    for key in PROMPT_GROUP_KEYS:
+        group_values = {
             original: translated.strip() or original
-            for original, translated in translations.get(key, {}).items()
+            for original, translated in defaults.get(key, {}).items()
         }
-        for key in PROMPT_GROUP_KEYS
-    }
+        group_values.update(
+            {
+                original: translated.strip() or original
+                for original, translated in translations.get(key, {}).items()
+            }
+        )
+        groups[key] = group_values
 
     variables = sorted(groups["variables"].items(), key=lambda item: len(item[0]), reverse=True)
 

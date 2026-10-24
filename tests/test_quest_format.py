@@ -103,7 +103,7 @@ class ClassifyDialogueTests(unittest.TestCase):
     def test_groups_prompts_and_auto_localizes_special_speakers(self) -> None:
         result = self._classify()
 
-        self.assertEqual(set(result.prompts["speakers"]), {"Katheryne", "Traveler"})
+        self.assertEqual(set(result.prompts["speakers"]), {"Katheryne", "Traveler", "Jeht"})
         self.assertIn("(If you talked to Katheryne, the quest starts)", result.prompts["conditions"])
         self.assertIn("Quest Objectives", result.prompts["conditions"])
         self.assertIn("Optional Dialogue: Talk to Jeht again", result.prompts["optional"])
@@ -113,8 +113,12 @@ class ClassifyDialogueTests(unittest.TestCase):
             {"Quest Objective": 1, "Quest Description": 1},
         )
         self.assertEqual(result.auto_localized, {"Jeht": "Джехт"})
+        self.assertEqual(result.defaults["speakers"]["Jeht"], "Джехт")
+        self.assertEqual(result.defaults["speakers"]["Katheryne"], "Katheryne")
+        self.assertEqual(result.df.iloc[4]["header"], "Jeht")
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
         self.assertEqual(result.df.iloc[4]["header"], "Джехт")
-        self.assertNotIn("Jeht", result.prompts["speakers"])
 
     def test_variables_are_optional(self) -> None:
         result = self._classify(prompt_variables = True)
@@ -130,7 +134,7 @@ class ClassifyDialogueTests(unittest.TestCase):
         self.assertIn("type", second_result.df.columns)
         self.assertEqual(list(second_result.df.columns).count("type"), 1)
 
-    def test_disabling_header_prompts_keeps_english_values(self) -> None:
+    def test_disabling_header_prompts_uses_defaults_without_a_dialog(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame({"header": ["Katheryne", "Jeht"], "text": ["Hello", "Hi"]}),
             speaker_map = {"Jeht": "Джехт"},
@@ -140,6 +144,10 @@ class ClassifyDialogueTests(unittest.TestCase):
 
         self.assertFalse(result.has_prompts)
         self.assertEqual(result.df.iloc[0]["header"], "Katheryne")
+        self.assertEqual(result.df.iloc[1]["header"], "Jeht")
+        self.assertEqual(result.defaults["speakers"]["Jeht"], "Джехт")
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
         self.assertEqual(result.df.iloc[1]["header"], "Джехт")
 
 
