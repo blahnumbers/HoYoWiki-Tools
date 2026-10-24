@@ -1,11 +1,10 @@
 import hashlib
-import json
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 from utils import quest_format
+from utils.copy_component import copy_formatted_text
 from utils.quest_data import LANGUAGE_LABELS, QuestData, QuestDataError, parse_quest_file
 
 
@@ -13,6 +12,7 @@ PENDING_KEY = "quest_formatter_pending"
 OUTPUT_KEY = "quest_formatter_html"
 TARGET_LANGUAGE_KEY = "quest_formatter_target_language"
 JUST_FORMATTED_KEY = "quest_formatter_just_formatted"
+COPY_NONCE_KEY = "quest_formatter_last_copy_nonce"
 
 
 @st.cache_data(show_spinner=False)
@@ -376,65 +376,28 @@ def _render_output() -> None:
     if formatted_html is None:
         return
 
-    sanitized_html = json.dumps(formatted_html).replace("</", "<\\/")
+    copy_result = copy_formatted_text(
+        html = formatted_html,
+        key = "quest_formatter_copy",
+    )
 
-    copy_html_button = """
-    <button style="font-size: 14px; padding: 10px 10px; border-radius: 8px;" onclick="copyHTML()">Copy Formatted Text</button>
-    <script>
-    async function copyHTML() {
-        const html = %s;
+    if copy_result:
+        nonce = copy_result.get("nonce")
 
-        // execCommand copies both rich text and a plain-text fallback, and
-        // works reliably from inside Streamlit's component iframe.
-        const container = document.createElement("div");
-        container.contentEditable = "true";
-        container.style.position = "fixed";
-        container.style.left = "-9999px";
-        container.style.top = "0";
-        container.innerHTML = html;
-        document.body.appendChild(container);
+        if nonce and nonce != st.session_state.get(COPY_NONCE_KEY):
+            st.session_state[COPY_NONCE_KEY] = nonce
 
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(container);
-        selection.removeAllRanges();
-        selection.addRange(range);
-
-        let copied = false;
-        try {
-            copied = document.execCommand("copy");
-        } catch (err) {
-            copied = false;
-        }
-
-        selection.removeAllRanges();
-        container.remove();
-
-        if (copied) {
-            alert("Copy successful!");
-            return;
-        }
-
-        try {
-            const textContainer = document.createElement("div");
-            textContainer.innerHTML = html;
-            const plainText = textContainer.innerText;
-
-            await navigator.clipboard.write([
-                new ClipboardItem({
-                    "text/html": new Blob([html], { type: "text/html" }),
-                    "text/plain": new Blob([plainText], { type: "text/plain" })
-                })
-            ]);
-            alert("Copy successful!");
-        } catch (err) {
-            alert("Failed to copy: " + err);
-        }
-    }
-    </script>
-    """ % sanitized_html
-
-    components.html(copy_html_button, height = 60)
+            if copy_result.get("copied"):
+                st.toast(
+                    "Formatted text copied.",
+                    icon = ":material/check_circle:",
+                )
+            else:
+                st.toast(
+                    "Could not copy formatted text: %s"
+                    % copy_result.get("error", "unknown error"),
+                    icon = ":material/error:",
+                )
 
 
 if OUTPUT_KEY not in st.session_state:

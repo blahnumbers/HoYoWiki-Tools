@@ -251,8 +251,8 @@ class FormattingTests(unittest.TestCase):
         russian_output = quest_format.format_dialogue(result.df, "RU")
 
         self.assertIn("Katheryne: </span>Hello", english_output)
-        self.assertIn("<strong>Katheryne: </strong></span></p>", russian_output)
-        self.assertIn("<p>Hello</p>", russian_output)
+        self.assertIn("<strong>Katheryne: </strong></span><br>Hello</p>", russian_output)
+        self.assertNotIn("<p>Hello</p>", russian_output)
 
     def test_format_dialogue_balances_tables(self) -> None:
         result = quest_format.classify_dialogue(pd.DataFrame(DIALOGUE_ROWS))

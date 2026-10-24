@@ -473,10 +473,10 @@ def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") ->
                             text,
                         )
                     case "RU":
-                        html_data += """
-                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong></span></p>
-                        <p>%s</p>
-                        """ % (header, text)
+                        html_data += """<p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong></span><br>%s</p>""" % (
+                            header,
+                            text,
+                        )
             case "sub_mission":
                 if last_row_type == "objective":
                     html_data += "<p></p>"

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: "Source Sans Pro", sans-serif;
+        }
+
+        body {
+            display: flex;
+            align-items: flex-start;
+        }
+
+        button {
+            font-size: 14px;
+            padding: 10px 10px;
+            border: none;
+            border-radius: 8px;
+            background: #657EF8;
+            color: #ffffff;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+    </style>
+</head>
+<body>
+    <button id="copy-button" disabled>Copy Formatted Text</button>
+
+    <script>
+        const copyButton = document.getElementById("copy-button");
+        let formattedHtml = "";
+
+        function sendMessage(type, data = {}) {
+            window.parent.postMessage(
+                { isStreamlitMessage: true, type, ...data },
+                "*"
+            );
+        }
+
+        function setFrameHeight(height) {
+            sendMessage("streamlit:setFrameHeight", { height });
+        }
+
+        function setComponentValue(value) {
+            sendMessage("streamlit:setComponentValue", {
+                value,
+                dataType: "json",
+            });
+        }
+
+        function copyWithExecCommand(html) {
+            const container = document.createElement("div");
+            container.contentEditable = "true";
+            container.style.position = "fixed";
+            container.style.left = "-9999px";
+            container.style.top = "0";
+            container.innerHTML = html;
+            document.body.appendChild(container);
+
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(container);
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            let copied = false;
+
+            try {
+                copied = document.execCommand("copy");
+            } catch (error) {
+                copied = false;
+            }
+
+            selection.removeAllRanges();
+            container.remove();
+
+            return copied;
+        }
+
+        async function copyHtml(html) {
+            if (copyWithExecCommand(html)) {
+                return { copied: true };
+            }
+
+            try {
+                const textContainer = document.createElement("div");
+                textContainer.innerHTML = html;
+                const plainText = textContainer.innerText;
+
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        "text/html": new Blob([html], { type: "text/html" }),
+                        "text/plain": new Blob([plainText], { type: "text/plain" }),
+                    }),
+                ]);
+
+                return { copied: true };
+            } catch (error) {
+                return { copied: false, error: String(error) };
+            }
+        }
+
+        window.addEventListener("message", (event) => {
+            if (event.data?.type !== "streamlit:render") {
+                return;
+            }
+
+            formattedHtml = event.data.args?.html || "";
+            copyButton.disabled = !formattedHtml;
+            setFrameHeight(60);
+        });
+
+        copyButton.addEventListener("click", async () => {
+            if (!formattedHtml) {
+                return;
+            }
+
+            copyButton.disabled = true;
+            const result = await copyHtml(formattedHtml);
+            copyButton.disabled = false;
+
+            setComponentValue({
+                ...result,
+                nonce: Date.now(),
+            });
+        });
+
+        setFrameHeight(60);
+        sendMessage("streamlit:componentReady", { apiVersion: 1 });
+    </script>
+</body>
+</html>
