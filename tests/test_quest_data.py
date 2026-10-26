@@ -139,6 +139,7 @@ class QuestDataParsingTests(unittest.TestCase):
             [entry["key"] for entry in quest.locations],
             ["Treasures Street, Sumeru"],
         )
+        self.assertEqual(quest.location_keys(), {"Treasures Street, Sumeru"})
         self.assertEqual(
             [entry["key"] for entry in quest.field_labels],
             ["Quest Objective", "Quest Description"],

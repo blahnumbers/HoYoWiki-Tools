@@ -119,6 +119,15 @@ class QuestData:
 
         return self._map_from_entries(self.locations, language)
 
+    def location_keys(self) -> set[str]:
+        """Return all English location keys, even when a translation is missing."""
+
+        return {
+            normalize_name(entry.get("EN", ""))
+            for entry in self.locations
+            if normalize_name(entry.get("EN", ""))
+        }
+
     def field_label_map(self, language: str) -> dict[str, str]:
         """Return ``English label -> localized label`` from ``Field Label``."""
 

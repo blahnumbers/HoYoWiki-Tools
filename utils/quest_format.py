@@ -50,8 +50,8 @@ PROMPT_GROUPS = (
     (
         "variables",
         "Bracket Content",
-        "Placeholder content found in the pasted text. Leave a field as-is "
-        "when it does not need a translation.",
+        "Placeholder content found in the text, such as {NICKNAME} or gendered "
+        "options. Leave a field as-is when it does not need a change.",
     ),
 )
 
@@ -124,6 +124,7 @@ def classify_dialogue(
     speaker_map: dict[str, str] | None = None,
     location_map: dict[str, str] | None = None,
     field_label_map: dict[str, str] | None = None,
+    location_keys: set[str] | None = None,
     prompt_variables: bool = True,
     prompt_headers: bool = True,
 ) -> ClassificationResult:
@@ -132,8 +133,10 @@ def classify_dialogue(
     ``speaker_map``, ``location_map`` and ``field_label_map`` map English keys
     to localized values (usually taken from the file's ``Translation``
     section). Matching values are prefilled in the prompt groups so the user
-    can still adjust them. Every other header is collected into a prompt
-    group as well.
+    can still adjust them. ``location_keys`` contains every English location
+    key, which lets location headers without a comma be recognized even when
+    their target translation is missing. Every other header is collected into
+    a prompt group as well.
     """
 
     df = _prepare_frame(dialogue_df)
@@ -152,6 +155,12 @@ def classify_dialogue(
         for key, value in (field_label_map or {}).items()
         if normalize_name(key) and normalize_name(value)
     }
+    normalized_location_keys = {
+        normalize_name(key) for key in (location_keys or set()) if normalize_name(key)
+    }
+
+    if not normalized_location_keys:
+        normalized_location_keys = set(normalized_location_map)
 
     prompts: dict[str, dict[str, int]] = {key: {} for key in PROMPT_GROUP_KEYS}
     defaults: dict[str, dict[str, str]] = {key: {} for key in PROMPT_GROUP_KEYS}
@@ -181,7 +190,14 @@ def classify_dialogue(
     for row_index, row in df.iterrows():
         raw_header = str(row["header"]).strip()
         text = str(row["text"])
+        normalized_raw_header = normalize_name(raw_header)
         row_type = classify_row(raw_header, text)
+
+        if (
+            row_type == "sub_mission"
+            and normalized_raw_header in normalized_location_keys
+        ):
+            row_type = "location"
 
         df.at[row_index, "type"] = row_type
 

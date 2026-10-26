@@ -36,6 +36,7 @@ def _handle_dialogue(
     speaker_map: dict[str, str] | None = None,
     location_map: dict[str, str] | None = None,
     field_label_map: dict[str, str] | None = None,
+    location_keys: set[str] | None = None,
     target: str = "EN",
     prompt_variables: bool = True,
     prompt_headers: bool = True,
@@ -45,6 +46,7 @@ def _handle_dialogue(
         speaker_map = speaker_map,
         location_map = location_map,
         field_label_map = field_label_map,
+        location_keys = location_keys,
         prompt_variables = prompt_variables,
         prompt_headers = prompt_headers,
     )
@@ -325,8 +327,9 @@ def _render_import_mode() -> None:
                 speaker_map = quest.speaker_map(target_language),
                 location_map = quest.location_map(target_language),
                 field_label_map = quest.field_label_map(target_language),
+                location_keys = quest.location_keys(),
                 target = target_language,
-                prompt_variables = False,
+                prompt_variables = True,
                 prompt_headers = target_language != "EN",
             )
 

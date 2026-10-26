@@ -127,6 +127,21 @@ class ClassifyDialogueTests(unittest.TestCase):
         result_without_variables = self._classify(prompt_variables = False)
         self.assertEqual(result_without_variables.prompts["variables"], {})
 
+    def test_gendered_options_and_nickname_are_prompted(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["Hello {NICKNAME}, {M#he}{F#she} is here."],
+                }
+            ),
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertIn("{NICKNAME}", result.prompts["variables"])
+        self.assertIn("{M#he}{F#she}", result.prompts["variables"])
+
     def test_prefills_location_and_field_label_translations(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(DIALOGUE_ROWS),
@@ -153,6 +168,33 @@ class ClassifyDialogueTests(unittest.TestCase):
         self.assertIn("Улица Сокровищ, Сумеру", headers)
         self.assertIn("Цель задания", headers)
         self.assertIn("Описание задания", headers)
+
+    def test_location_key_without_comma_is_classified_as_location(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Snezhnaya"], "text": [""]}),
+            location_map = {"Snezhnaya": "Снежная"},
+            location_keys = {"Snezhnaya"},
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        self.assertEqual(result.df.iloc[0]["type"], "location")
+        self.assertEqual(result.defaults["locations"]["Snezhnaya"], "Снежная")
+        self.assertIn("Snezhnaya", result.prompts["locations"])
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
+        self.assertEqual(result.df.iloc[0]["header"], "Снежная")
+
+    def test_location_map_keys_are_used_without_explicit_keys(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Snezhnaya"], "text": [""]}),
+            location_map = {"Snezhnaya": "Снежная"},
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        self.assertEqual(result.df.iloc[0]["type"], "location")
+        self.assertEqual(result.defaults["locations"]["Snezhnaya"], "Снежная")
 
     def test_classifying_twice_replaces_the_type_column(self) -> None:
         result = self._classify()
