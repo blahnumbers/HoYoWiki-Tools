@@ -521,13 +521,19 @@ def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") ->
 
                 html_data += "<p><em>%s</em></p>" % header
             case "action":
+                action_text = (
+                    "<strong>%s</strong>" % text
+                    if bool(row.get("bold", False))
+                    else text
+                )
+
                 if opened_tags and opened_tags[-1] != "action":
                     # Already inside an optional/choice table; keep the
                     # phrase in that table instead of nesting another one.
-                    html_data += """<p><span style="color: rgb(255, 255, 255);">%s</span></p>""" % text
+                    html_data += """<p><span style="color: rgb(255, 255, 255);">%s</span></p>""" % action_text
                 elif last_row_type == "action":
                     # Continue the current group of speaker-less phrases.
-                    html_data += """<p><span style="color: rgb(255, 255, 255);">%s</span></p>""" % text
+                    html_data += """<p><span style="color: rgb(255, 255, 255);">%s</span></p>""" % action_text
                 else:
                     html_data += """
                     <p></p>
@@ -536,7 +542,7 @@ def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") ->
                             <tr>
                                 <td colspan="1" rowspan="1">
                                     <p><span style="color: rgb(255, 255, 255);">%s</span></p>
-                    """ % text
+                    """ % action_text
 
                     opened_tags.append("action")
 
@@ -604,8 +610,14 @@ def _prepare_frame(dialogue_df: pd.DataFrame) -> pd.DataFrame:
         if column not in frame.columns:
             frame[column] = ""
 
+    if "bold" in frame.columns:
+        bold_values = frame["bold"].fillna(False).astype(bool).reset_index(drop=True)
+    else:
+        bold_values = pd.Series(False, index=range(len(frame)), dtype=bool)
+
     frame = frame[["header", "text"]].fillna("").astype(str)
     frame = frame.reset_index(drop=True)
+    frame["bold"] = bold_values
     frame.insert(0, "type", "")
 
     return frame

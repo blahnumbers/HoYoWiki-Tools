@@ -4,6 +4,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font
 
 from utils.quest_data import QuestDataError, parse_quest_file
 
@@ -215,7 +217,10 @@ class QuestDataParsingTests(unittest.TestCase):
 
         self.assertEqual(objective_df.shape, (0, 2))
         self.assertEqual(objective_df.dtypes.astype(str).tolist(), ["object", "object"])
-        self.assertEqual(dialogue_df.dtypes.astype(str).tolist(), ["object", "object"])
+        self.assertEqual(
+            dialogue_df.dtypes.astype(str).tolist(),
+            ["object", "object", "bool"],
+        )
 
     def test_accepts_singular_objectives_header_before_dialogue(self) -> None:
         rows = [
@@ -252,6 +257,36 @@ class QuestDataParsingTests(unittest.TestCase):
             [entry["key"] for entry in quest.dialogue_rows],
             ["Quest Objective", "Katheryne"],
         )
+
+    def test_reads_bold_formatting_for_dialogue_rows(self) -> None:
+        workbook = Workbook()
+        worksheet = workbook.active
+        rows = [
+            [" ", "EN", "RU"],
+            ["Dialogue"],
+            ["", "Bold action", "Жирное действие"],
+            ["Katheryne", "Hello", "Привет"],
+        ]
+
+        for row in rows:
+            worksheet.append(row)
+
+        worksheet.cell(row = 3, column = 2).font = Font(bold = True)
+
+        path = self.directory / "bold.xlsx"
+        workbook.save(path)
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+        action_entry = quest.dialogue_rows[0]
+
+        self.assertEqual(action_entry["key"], "")
+        self.assertEqual(quest.dialogue_bold[action_entry["row"]], {"EN"})
+
+        english_df = quest.dialogue_dataframe("EN")
+        russian_df = quest.dialogue_dataframe("RU")
+
+        self.assertTrue(bool(english_df.iloc[0]["bold"]))
+        self.assertFalse(bool(russian_df.iloc[0]["bold"]))
 
     def test_rejects_file_without_language_row(self) -> None:
         rows = [["Title", "Test"], ["Dialogue"], ["Katheryne", "Hello"]]

@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import io
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import openpyxl
 import pandas as pd
 
 
@@ -73,6 +74,7 @@ class QuestData:
     locations: list[dict[str, str]]
     field_labels: list[dict[str, str]]
     dialogue_rows: list[dict[str, str]]
+    dialogue_bold: dict[str, set[str]] = field(default_factory=dict)
 
     def title_for(self, language: str) -> str:
         return self.titles.get(language, "")
@@ -89,10 +91,22 @@ class QuestData:
     def dialogue_dataframe(self, language: str) -> pd.DataFrame:
         return pd.DataFrame(
             {
-                "header": [entry["key"] for entry in self.dialogue_rows],
-                "text": [entry.get(language, "") for entry in self.dialogue_rows],
-            },
-            dtype = str,
+                "header": pd.Series(
+                    [entry["key"] for entry in self.dialogue_rows],
+                    dtype = str,
+                ),
+                "text": pd.Series(
+                    [entry.get(language, "") for entry in self.dialogue_rows],
+                    dtype = str,
+                ),
+                "bold": pd.Series(
+                    [
+                        language in self.dialogue_bold.get(entry["row"], set())
+                        for entry in self.dialogue_rows
+                    ],
+                    dtype = bool,
+                ),
+            }
         )
 
     def speaker_map(self, language: str) -> dict[str, str]:
@@ -198,8 +212,15 @@ def parse_quest_file(file_bytes: bytes, file_name: str) -> QuestData:
     objectives = _parse_objectives(
         rows, language_columns, dialogue_header_index, excluded_rows
     )
-    dialogue_rows = _parse_dialogue_rows(
-        rows, language_columns, dialogue_header_index + 1, excluded_rows
+    bold_cells = _read_bold_cells(
+        file_bytes, file_name, language_columns, len(rows)
+    )
+    dialogue_rows, dialogue_bold = _parse_dialogue_rows(
+        rows,
+        language_columns,
+        dialogue_header_index + 1,
+        excluded_rows,
+        bold_cells,
     )
     titles = _parse_title(rows, language_columns, language_row_index)
 
@@ -212,12 +233,47 @@ def parse_quest_file(file_bytes: bytes, file_name: str) -> QuestData:
         locations=translation_segments["locations"],
         field_labels=translation_segments["field_labels"],
         dialogue_rows=dialogue_rows,
+        dialogue_bold=dialogue_bold,
     )
+
+
+def _read_bold_cells(
+    file_bytes: bytes,
+    file_name: str,
+    language_columns: dict[str, int],
+    row_count: int,
+) -> set[tuple[int, int]]:
+    suffix = Path(file_name).suffix.lower()
+
+    if suffix not in {".xlsx", ".xlsm"}:
+        return set()
+
+    try:
+        workbook = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    except Exception:
+        return set()
+
+    try:
+        worksheet = workbook.worksheets[0]
+        bold_cells: set[tuple[int, int]] = set()
+
+        for row_index in range(row_count):
+            for column_index in language_columns.values():
+                cell = worksheet.cell(
+                    row = row_index + 1,
+                    column = column_index + 1,
+                )
+
+                if cell.font and cell.font.bold:
+                    bold_cells.add((row_index, column_index))
+
+        return bold_cells
+    finally:
+        workbook.close()
 
 
 def _read_rows(file_bytes: bytes, file_name: str) -> list[list[str]]:
     suffix = Path(file_name).suffix.lower()
-
     if suffix in {".xlsx", ".xlsm"}:
         frame = pd.read_excel(
             io.BytesIO(file_bytes),
@@ -455,8 +511,10 @@ def _parse_dialogue_rows(
     language_columns: dict[str, int],
     start_index: int,
     excluded_rows: set[int],
-) -> list[dict[str, str]]:
+    bold_cells: set[tuple[int, int]],
+) -> tuple[list[dict[str, str]], dict[str, set[str]]]:
     entries: list[dict[str, str]] = []
+    bold_by_row: dict[str, set[str]] = {}
 
     for row_index in range(start_index, len(rows)):
         if row_index in excluded_rows:
@@ -468,13 +526,22 @@ def _parse_dialogue_rows(
         entry.update(values)
         entries.append(entry)
 
+        bold_languages = {
+            code
+            for code, column_index in language_columns.items()
+            if (row_index, column_index) in bold_cells
+        }
+
+        if bold_languages:
+            bold_by_row[entry["row"]] = bold_languages
+
     while entries and _is_blank_entry(entries[0], language_columns):
         entries.pop(0)
 
     while entries and _is_blank_entry(entries[-1], language_columns):
         entries.pop()
 
-    return entries
+    return entries, bold_by_row
 
 
 def _is_blank_entry(entry: dict[str, str], language_columns: dict[str, int]) -> bool:

@@ -254,8 +254,13 @@ def _render_import_mode() -> None:
         )
 
         st.markdown("**Dialogue**")
+        preview_dialogue_df = (
+            quest.dialogue_dataframe(target_language)
+            .head(50)
+            .rename(columns = {"bold": "Bold"})
+        )
         st.dataframe(
-            quest.dialogue_dataframe(target_language).head(50),
+            preview_dialogue_df,
             hide_index = True,
             height = 360,
         )
@@ -267,6 +272,11 @@ def _render_import_mode() -> None:
     import_table_config = {
         "header": st.column_config.TextColumn("Row Header", width = "small"),
         "text": st.column_config.TextColumn("Text", width = "large"),
+    }
+
+    dialogue_table_config = {
+        **import_table_config,
+        "bold": None,
     }
 
     objective_tab, dialogue_tab = st.tabs(["Objective", "Dialogue"])
@@ -295,7 +305,7 @@ def _render_import_mode() -> None:
 
         dialogue_df = st.data_editor(
             quest.dialogue_dataframe(target_language),
-            column_config = import_table_config,
+            column_config = dialogue_table_config,
             num_rows = "dynamic",
             hide_index = True,
             height = 360,

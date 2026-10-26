@@ -409,6 +409,26 @@ class FormattingTests(unittest.TestCase):
         self.assertIn("(If condition)", choice_table)
         self.assertIn("Conditional dialogue", choice_table)
 
+    def test_bold_action_rows_are_wrapped_in_strong(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["", "", "Katheryne"],
+                    "text": ["Bold action", "Normal action", "Hello"],
+                    "bold": [True, False, False],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(result.df, "EN")
+
+        self.assertIn("<strong>Bold action</strong>", output)
+        self.assertIn("Normal action", output)
+        self.assertNotIn("<strong>Normal action</strong>", output)
+        self.assertNotIn("<strong>Hello</strong>", output)
+
     def test_prepare_text_handles_non_breaking_spaces_and_ruby(self) -> None:
         self.assertEqual(
             quest_format.prepare_text("A{NON_BREAK_SPACE}B"),
