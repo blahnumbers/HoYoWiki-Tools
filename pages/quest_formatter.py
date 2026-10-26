@@ -1,8 +1,9 @@
 import hashlib
-import html
+import json
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from utils import quest_format
 from utils.copy_component import copy_formatted_text
@@ -24,45 +25,68 @@ div[data-testid="stDialog"] div[role="dialog"] {
 </style>
 """
 
-VARIABLE_GROUP_CSS = """
-<style>
-.st-key-bracket_content_group [data-testid="stHorizontalBlock"] {
-    gap: 0 !important;
-    align-items: stretch;
-}
+INPUT_CONTEXT_SCRIPT = """
+<script>
+(function() {
+    const items = %s;
+    const doc = window.parent.document;
+    let attempts = 0;
 
-.st-key-bracket_content_group [data-testid="stHorizontalBlock"] [data-testid="stWidgetLabel"] {
-    display: none !important;
-}
+    function applyAll() {
+        let pending = 0;
 
-.st-key-bracket_content_group [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child {
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: flex-end !important;
-}
+        for (const item of items) {
+            const container = doc.querySelector('[class*="st-key-' + item.key + '"]');
+            const input = container ? container.querySelector('input') : null;
 
-.st-key-bracket_content_group .input-group-text {
-    display: flex;
-    align-items: center;
-    height: 40px;
-    box-sizing: border-box;
-    padding: 0 0.75rem;
-    overflow: hidden;
-    background: rgb(59, 67, 84);
-    border: 1px solid rgb(59, 67, 84);
-    border-right: none;
-    border-radius: 8px 0 0 8px;
-    color: rgb(250, 250, 250);
-    font-family: "Source Sans Pro", sans-serif;
-    font-size: 0.875rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
+            if (!input) {
+                pending += 1;
+                continue;
+            }
 
-.st-key-bracket_content_group [data-testid="stTextInputRootElement"] {
-    border-radius: 0 8px 8px 0 !important;
-}
-</style>
+            const root = input.closest('[data-testid="stTextInputRootElement"]');
+
+            if (!root) {
+                pending += 1;
+                continue;
+            }
+
+            root.querySelectorAll('.input-context').forEach(el => el.remove());
+
+            const base = root.querySelector('[data-baseweb="base-input"]');
+
+            if (!base) {
+                pending += 1;
+                continue;
+            }
+
+            const context = doc.createElement('div');
+            context.className = 'input-context';
+            context.textContent = item.context;
+            context.style.alignSelf = 'stretch';
+            context.style.color = 'rgba(250, 250, 250, 0.6)';
+            context.style.paddingLeft = '8px';
+            context.style.whiteSpace = 'nowrap';
+            context.style.display = 'flex';
+            context.style.alignItems = 'center';
+            context.style.fontSize = '1rem';
+            context.style.flex = '0 0 auto';
+            context.style.cursor = 'text';
+            context.addEventListener('click', () => input.focus());
+            input.style.flex = '1';
+
+            base.insertBefore(context, input);
+        }
+
+        if (pending > 0 && attempts < 40) {
+            attempts += 1;
+            setTimeout(applyAll, 50);
+        }
+    }
+
+    applyAll();
+})();
+</script>
 """
 
 
@@ -159,59 +183,46 @@ def translation_dialog() -> None:
 
         group_values: dict[str, str] = {}
         group_defaults = result.defaults.get(group_key) or {}
+        context_items = []
 
-        if group_key == "variables":
-            st.markdown(VARIABLE_GROUP_CSS, unsafe_allow_html = True)
-            group_container = st.container(key = "bracket_content_group")
-        else:
-            group_container = st.container()
+        for original, count in items.items():
+            help_parts = []
 
-        with group_container:
-            for original, count in items.items():
-                help_parts = []
+            if count > 1:
+                help_parts.append("Used in %d rows" % count)
 
-                if count > 1:
-                    help_parts.append("Used in %d rows" % count)
+            context = ""
 
-                context = ""
+            if group_key == "variables":
+                context = result.variable_contexts.get(original, "")
+                help_parts.append("Only the bracketed placeholder is editable.")
 
-                if group_key == "variables":
-                    context = result.variable_contexts.get(original, "")
-                    help_parts.append(
-                        "Only the bracketed placeholder is editable."
-                    )
+            help_text = " ".join(help_parts) or None
+            input_key = _translation_key(target, group_key, original)
 
-                help_text = " ".join(help_parts) or None
+            if context:
+                group_values[original] = st.text_input(
+                    original,
+                    value = group_defaults.get(original, original),
+                    key = input_key,
+                    label_visibility = "collapsed",
+                    icon = ":material/translate:",
+                )
+                context_items.append({"key": input_key, "context": context})
+            else:
+                group_values[original] = st.text_input(
+                    original,
+                    value = group_defaults.get(original, original),
+                    key = input_key,
+                    help = help_text,
+                    icon = ":material/translate:",
+                )
 
-                if context:
-                    context_column, input_column = st.columns([1, 3])
-
-                    with context_column:
-                        st.markdown(
-                            '<div class="input-group-text" title="%s">%s</div>'
-                            % (
-                                html.escape(context, quote = True),
-                                html.escape(context),
-                            ),
-                            unsafe_allow_html = True,
-                        )
-
-                    with input_column:
-                        group_values[original] = st.text_input(
-                            original,
-                            value = group_defaults.get(original, original),
-                            key = _translation_key(target, group_key, original),
-                            label_visibility = "collapsed",
-                            icon = ":material/translate:",
-                        )
-                else:
-                    group_values[original] = st.text_input(
-                        original,
-                        value = group_defaults.get(original, original),
-                        key = _translation_key(target, group_key, original),
-                        help = help_text,
-                        icon = ":material/translate:",
-                    )
+        if context_items:
+            components.html(
+                INPUT_CONTEXT_SCRIPT % json.dumps(context_items),
+                height = 0,
+            )
 
         entered_values[group_key] = group_values
 

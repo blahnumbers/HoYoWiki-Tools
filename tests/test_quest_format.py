@@ -163,7 +163,7 @@ class ClassifyDialogueTests(unittest.TestCase):
             pd.DataFrame(
                 {
                     "header": ["Paimon"],
-                    "text": ["ты {M#он}{F#она}, {F#оставившая}"],
+                    "text": ["ты{M#он}{F#она},{F#оставившая}"],
                 }
             ),
             prompt_variables = True,
@@ -175,6 +175,22 @@ class ClassifyDialogueTests(unittest.TestCase):
             "ты",
         )
         self.assertEqual(previous_token.variable_contexts["{F#оставившая}"], "")
+
+        spaced = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["ты {F#а}"]}),
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(spaced.variable_contexts["{F#а}"], "")
+
+        attached = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["ты{F#а}"]}),
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(attached.variable_contexts["{F#а}"], "ты")
 
     def test_nickname_uses_localized_traveler_name(self) -> None:
         result = quest_format.classify_dialogue(

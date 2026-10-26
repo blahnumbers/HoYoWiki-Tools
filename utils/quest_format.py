@@ -646,7 +646,17 @@ def _replace_ruby(match: re.Match[str]) -> str:
 
 
 def _variable_context(source: str, start: int) -> str:
-    before = VARIABLE_RE.sub(" ", source[:start]).rstrip()
+    raw_before = source[:start]
+
+    if not raw_before:
+        return ""
+
+    # Only show context when the placeholder is attached directly to the
+    # preceding text (no space) and is not directly after another placeholder.
+    if raw_before[-1].isspace() or raw_before.endswith("}"):
+        return ""
+
+    before = VARIABLE_RE.sub(" ", raw_before).rstrip()
 
     if not before:
         return ""
