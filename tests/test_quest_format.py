@@ -239,6 +239,42 @@ class ClassifyDialogueTests(unittest.TestCase):
 
         self.assertEqual(result.defaults["variables"]["{NICKNAME}"], "{NICKNAME}")
 
+    def test_german_gender_pairs_are_skipped_from_variable_prompts(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{F#Die Beraterin}{M#Der Berater}"],
+                }
+            ),
+            target_language = "DE",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertNotIn(
+            "{F#Die Beraterin}{M#Der Berater}",
+            result.prompts["variables"],
+        )
+
+    def test_german_gender_pairs_are_prompted_for_other_languages(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{F#Die Beraterin}{M#Der Berater}"],
+                }
+            ),
+            target_language = "RU",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertIn(
+            "{F#Die Beraterin}{M#Der Berater}",
+            result.prompts["variables"],
+        )
+
     def test_optional_prefix_uses_field_label_translation(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
@@ -605,6 +641,108 @@ class FormattingTests(unittest.TestCase):
         self.assertIn("Normal action", output)
         self.assertNotIn("<strong>Normal action</strong>", output)
         self.assertNotIn("<strong>Hello</strong>", output)
+
+    def test_german_gender_pairs_are_converted_male_first(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{F#Die Beraterin}{M#Der Berater}"],
+                }
+            ),
+            target_language = "DE",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "DE",
+        )
+
+        self.assertIn("Der Berater/Die Beraterin", output)
+        self.assertNotIn("{F#", output)
+
+    def test_german_gender_pairs_reverse_order_still_male_first(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{M#Der Berater}{F#Die Beraterin}"],
+                }
+            ),
+            target_language = "DE",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "DE",
+        )
+
+        self.assertIn("Der Berater/Die Beraterin", output)
+
+    def test_german_gender_pairs_are_not_converted_for_other_languages(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{F#Die Beraterin}{M#Der Berater}"],
+                }
+            ),
+            target_language = "RU",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "RU",
+        )
+
+        self.assertIn("{F#Die Beraterin}{M#Der Berater}", output)
+
+    def test_german_multiple_gender_pairs_are_converted(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{F#A}{M#B}{F#C}{M#D}"],
+                }
+            ),
+            target_language = "DE",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(result.prompts["variables"], {})
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "DE",
+        )
+
+        self.assertIn("B/A/D/C", output)
+
+    def test_german_gender_pairs_in_objectives(self) -> None:
+        objective_df = pd.DataFrame(
+            {
+                "header": ["1"],
+                "text": ["{F#Die Beraterin}{M#Der Berater}"],
+            }
+        )
+
+        output = quest_format.format_objective(
+            objective_df,
+            target_language = "DE",
+        )
+
+        self.assertIn("Der Berater/Die Beraterin", output)
 
     def test_prepare_text_handles_non_breaking_spaces_and_ruby(self) -> None:
         self.assertEqual(

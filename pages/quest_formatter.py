@@ -122,6 +122,7 @@ def _handle_dialogue(
         location_map = location_map,
         field_label_map = field_label_map,
         location_keys = location_keys,
+        target_language = target,
         prompt_variables = prompt_variables,
         prompt_headers = prompt_headers,
     )
@@ -135,7 +136,7 @@ def _handle_dialogue(
         translation_dialog()
     else:
         quest_format.apply_translations(result.df, {}, result.defaults)
-        _set_output(quest_format.format_dialogue(result.df, preset))
+        _set_output(quest_format.format_dialogue(result.df, preset, target))
 
 
 @st.dialog("Content Replacement", width = "large")
@@ -231,7 +232,7 @@ def translation_dialog() -> None:
     if st.button("Format", type = "primary", key = "quest_formatter_apply_translations"):
         with st.spinner("Formatting...", show_time = True):
             quest_format.apply_translations(result.df, entered_values, result.defaults)
-            _set_output(quest_format.format_dialogue(result.df, preset))
+            _set_output(quest_format.format_dialogue(result.df, preset, target))
             st.session_state[PENDING_KEY] = None
 
         st.rerun()
@@ -409,7 +410,12 @@ def _render_import_mode() -> None:
             key = "format_objective_button_import",
         ):
             objective_df.fillna("", inplace = True)
-            _set_output(quest_format.format_objective(objective_df))
+            _set_output(
+                quest_format.format_objective(
+                    objective_df,
+                    target_language = target_language,
+                )
+            )
 
     with dialogue_tab:
         st.caption("Imported data is editable. Changes made here are used when formatting.")

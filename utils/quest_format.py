@@ -63,6 +63,9 @@ CHOICE_PREFIX_RE = re.compile(r"^(?:\d+\.)+\s+")
 OBJECTIVE_KEY_RE = re.compile(r"^\d+(?:\.0+)?$")
 VARIABLE_RE = re.compile(r"(?:\{[^{}]+\})+")
 RUBY_RE = re.compile(r"\s*(\S+)\{RUBY#\[.\](.+?)\}(\S+)\s*")
+GENDER_PAIR_RE = re.compile(
+    r"\{F#([^{}]*)\}\{M#([^{}]*)\}|\{M#([^{}]*)\}\{F#([^{}]*)\}"
+)
 
 
 @dataclass
@@ -128,6 +131,7 @@ def classify_dialogue(
     location_map: dict[str, str] | None = None,
     field_label_map: dict[str, str] | None = None,
     location_keys: set[str] | None = None,
+    target_language: str | None = None,
     prompt_variables: bool = True,
     prompt_headers: bool = True,
 ) -> ClassificationResult:
@@ -138,8 +142,9 @@ def classify_dialogue(
     section). Matching values are prefilled in the prompt groups so the user
     can still adjust them. ``location_keys`` contains every English location
     key, which lets location headers without a comma be recognized even when
-    their target translation is missing. Every other header is collected into
-    a prompt group as well.
+    their target translation is missing. For German, complete gendered pairs
+    are auto-handled instead of being added to the bracket prompts. Every
+    other header is collected into a prompt group as well.
     """
 
     df = _prepare_frame(dialogue_df)
@@ -282,6 +287,12 @@ def classify_dialogue(
                     if "{RUBY#" in token or "{NON_BREAK_SPACE}" in token:
                         continue
 
+                    if (
+                        target_language == "DE"
+                        and _is_german_gender_pair_token(token)
+                    ):
+                        continue
+
                     variable_default = token
 
                     if traveler_name:
@@ -362,21 +373,33 @@ def apply_translations(
         classified_df.at[row_index, "text"] = text
 
 
-def format_objective(objective_df: pd.DataFrame) -> str:
+def format_objective(
+    objective_df: pd.DataFrame,
+    target_language: str | None = None,
+) -> str:
     html_data = "<ol>"
 
     for _, row in objective_df.iterrows():
         header = "" if row.get("header") is None else str(row["header"]).strip()
 
         if header:
-            html_data += "<li><p>%s</p></li>" % ("" if row.get("text") is None else row["text"])
+            text = "" if row.get("text") is None else str(row["text"])
+
+            if target_language == "DE":
+                text = _replace_german_gender_pairs(text)
+
+            html_data += "<li><p>%s</p></li>" % text
 
     html_data += "</ol>"
 
     return html_data
 
 
-def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") -> str:
+def format_dialogue(
+    classified_dialogue_df: pd.DataFrame,
+    preset: str = "EN",
+    target_language: str | None = None,
+) -> str:
     language_preset = preset if preset in {"EN", "RU"} else "EN"
 
     html_data = ""
@@ -416,8 +439,11 @@ def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") ->
         if note_lookahead_index < len(classified_dialogue_df):
             next_note_target_type = classified_dialogue_df.at[note_lookahead_index, "type"]
 
-        text = prepare_text(str(row["text"]))
+        text = prepare_text(str(row["text"]), target_language)
         header = str(row["header"])
+
+        if target_language == "DE":
+            header = _replace_german_gender_pairs(header)
 
         match row["type"]:
             case "description":
@@ -633,9 +659,35 @@ def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") ->
     return html_data
 
 
-def prepare_text(text: str) -> str:
+def prepare_text(text: str, target_language: str | None = None) -> str:
+    if target_language == "DE":
+        text = _replace_german_gender_pairs(text)
+
     text = RUBY_RE.sub(_replace_ruby, text)
     return text.replace("{NON_BREAK_SPACE}", "&nbsp;")
+
+
+def _is_german_gender_pair_token(token: str) -> bool:
+    return bool(token) and GENDER_PAIR_RE.sub("", token) == ""
+
+
+def _replace_german_gender_pairs(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        if match.group(1) is not None:
+            female = match.group(1)
+            male = match.group(2)
+        else:
+            male = match.group(3)
+            female = match.group(4)
+
+        replacement = "%s/%s" % (male, female)
+
+        if GENDER_PAIR_RE.match(match.string, match.end()):
+            replacement += "/"
+
+        return replacement
+
+    return GENDER_PAIR_RE.sub(replace, text)
 
 
 def _replace_ruby(match: re.Match[str]) -> str:
