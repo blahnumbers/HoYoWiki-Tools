@@ -108,11 +108,25 @@ def translation_dialog() -> None:
         group_defaults = result.defaults.get(group_key) or {}
 
         for original, count in items.items():
+            label = original
+            help_parts = []
+
+            if count > 1:
+                help_parts.append("Used in %d rows" % count)
+
+            if group_key == "variables":
+                context = result.variable_contexts.get(original, "")
+
+                if context:
+                    label = "%s  ·  %s" % (context, original)
+
+                help_parts.append("Only the bracketed placeholder is editable.")
+
             group_values[original] = st.text_input(
-                original,
+                label,
                 value = group_defaults.get(original, original),
                 key = _translation_key(target, group_key, original),
-                help = ("Used in %d rows" % count) if count > 1 else None,
+                help = " ".join(help_parts) or None,
             )
 
         entered_values[group_key] = group_values

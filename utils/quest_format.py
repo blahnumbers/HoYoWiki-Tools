@@ -33,7 +33,8 @@ PROMPT_GROUPS = (
     (
         "optional",
         "Optional Sections",
-        "Optional dialogue and optional text section headers.",
+        "Optional dialogue and optional text section headers. Recurring prefixes "
+        "from the file's Field Label list are prefilled.",
     ),
     (
         "locations",
@@ -69,6 +70,7 @@ class ClassificationResult:
     prompts: dict[str, dict[str, int]] = field(default_factory=dict)
     auto_localized: dict[str, str] = field(default_factory=dict)
     defaults: dict[str, dict[str, str]] = field(default_factory=dict)
+    variable_contexts: dict[str, str] = field(default_factory=dict)
 
     @property
     def has_prompts(self) -> bool:
@@ -165,6 +167,7 @@ def classify_dialogue(
     prompts: dict[str, dict[str, int]] = {key: {} for key in PROMPT_GROUP_KEYS}
     defaults: dict[str, dict[str, str]] = {key: {} for key in PROMPT_GROUP_KEYS}
     auto_localized: dict[str, str] = {}
+    variable_contexts: dict[str, str] = {}
 
     def add_prompt(group: str, value: str, default: str | None = None) -> None:
         if value:
@@ -224,9 +227,19 @@ def classify_dialogue(
         elif row_type == "addopt":
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header
+            localized_optional = _localize_header_prefix(
+                normalized_header, normalized_field_label_map
+            )
+
+            if localized_optional:
+                defaults["optional"][normalized_header] = localized_optional
 
             if prompt_headers:
-                add_prompt("optional", normalized_header, normalized_header)
+                add_prompt(
+                    "optional",
+                    normalized_header,
+                    localized_optional or normalized_header,
+                )
         elif row_type == "choice_branch":
             speaker = normalize_name(CHOICE_PREFIX_RE.sub("", raw_header))
             resolve_speaker(row_index, speaker)
@@ -268,11 +281,17 @@ def classify_dialogue(
 
                     add_prompt("variables", token, token)
 
+                    if token not in variable_contexts:
+                        variable_contexts[token] = _variable_context(
+                            source, match.start()
+                        )
+
     return ClassificationResult(
         df=df,
         prompts=prompts,
         auto_localized=auto_localized,
         defaults=defaults,
+        variable_contexts=variable_contexts,
     )
 
 
@@ -614,6 +633,49 @@ def _replace_ruby(match: re.Match[str]) -> str:
     ruby_text = html.escape(match.group(2))
 
     return """<custom-ruby data-ruby="%s|%s"></custom-ruby>""" % (base_text, ruby_text)
+
+
+def _variable_context(source: str, start: int) -> str:
+    before = VARIABLE_RE.sub(" ", source[:start]).rstrip()
+
+    if not before:
+        return ""
+
+    match = re.search(r"(\S+)$", before)
+
+    if match is None:
+        return ""
+
+    context = re.sub(r"^[\W_]+|[\W_]+$", "", match.group(1))
+
+    if len(context) > 30:
+        context = "…" + context[-30:]
+
+    return context
+
+
+def _localize_header_prefix(
+    header: str, field_label_map: dict[str, str]
+) -> str:
+    for separator in (":", "："):
+        if separator not in header:
+            continue
+
+        prefix, rest = header.split(separator, 1)
+        localized_prefix = field_label_map.get(normalize_name(prefix))
+
+        if not localized_prefix:
+            continue
+
+        localized_prefix = localized_prefix.rstrip(":：").strip()
+        rest = rest.strip()
+
+        if rest:
+            return "%s%s %s" % (localized_prefix, separator, rest)
+
+        return "%s%s" % (localized_prefix, separator)
+
+    return ""
 
 
 def _prepare_frame(dialogue_df: pd.DataFrame) -> pd.DataFrame:

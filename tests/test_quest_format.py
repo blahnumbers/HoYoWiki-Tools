@@ -142,6 +142,78 @@ class ClassifyDialogueTests(unittest.TestCase):
         self.assertIn("{NICKNAME}", result.prompts["variables"])
         self.assertIn("{M#he}{F#she}", result.prompts["variables"])
 
+    def test_variable_context_is_collected(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["прибыл{F#а}"]}),
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(result.variable_contexts["{F#а}"], "прибыл")
+
+        no_context = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["{NICKNAME}, hello"]}),
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(no_context.variable_contexts["{NICKNAME}"], "")
+
+        previous_token = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["ты {M#он}{F#она}, {F#оставившая}"],
+                }
+            ),
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(
+            previous_token.variable_contexts["{M#он}{F#она}"],
+            "ты",
+        )
+        self.assertEqual(previous_token.variable_contexts["{F#оставившая}"], "")
+
+    def test_optional_prefix_uses_field_label_translation(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Optional Dialogue: Talk to Anastasya"],
+                    "text": [""],
+                }
+            ),
+            field_label_map = {"Optional Dialogue": "Необязательный диалог"},
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["optional"]["Optional Dialogue: Talk to Anastasya"],
+            "Необязательный диалог: Talk to Anastasya",
+        )
+        self.assertIn(
+            "Optional Dialogue: Talk to Anastasya",
+            result.prompts["optional"],
+        )
+
+        no_prefix = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Optional Dialogue: Talk to Anastasya"],
+                    "text": [""],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            no_prefix.defaults["optional"]["Optional Dialogue: Talk to Anastasya"],
+            "Optional Dialogue: Talk to Anastasya",
+        )
+
     def test_prefills_location_and_field_label_translations(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(DIALOGUE_ROWS),
