@@ -176,6 +176,53 @@ class ClassifyDialogueTests(unittest.TestCase):
         )
         self.assertEqual(previous_token.variable_contexts["{F#оставившая}"], "")
 
+    def test_nickname_uses_localized_traveler_name(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["Hello {NICKNAME}!"]}),
+            speaker_map = {"Traveler": "Путешественник/ца"},
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(
+            result.defaults["variables"]["{NICKNAME}"],
+            "Путешественник/ца",
+        )
+        self.assertIn("{NICKNAME}", result.prompts["variables"])
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
+        self.assertEqual(
+            result.df.iloc[0]["text"],
+            "Hello Путешественник/ца!",
+        )
+
+    def test_nickname_inside_combined_token_uses_traveler_name(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{NICKNAME}{M#he}{F#she}"],
+                }
+            ),
+            speaker_map = {"Traveler": "Путешественник/ца"},
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(
+            result.defaults["variables"]["{NICKNAME}{M#he}{F#she}"],
+            "Путешественник/ца{M#he}{F#she}",
+        )
+
+    def test_nickname_stays_unchanged_without_traveler_name(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["Hello {NICKNAME}!"]}),
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(result.defaults["variables"]["{NICKNAME}"], "{NICKNAME}")
+
     def test_optional_prefix_uses_field_label_translation(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(

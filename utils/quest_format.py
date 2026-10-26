@@ -52,7 +52,8 @@ PROMPT_GROUPS = (
         "variables",
         "Bracket Content",
         "Placeholder content found in the text, such as {NICKNAME} or gendered "
-        "options. Leave a field as-is when it does not need a change.",
+        "options. {NICKNAME} is prefilled with the localized Traveler name when "
+        "available. Leave a field as-is when it does not need a change.",
     ),
 )
 
@@ -163,6 +164,8 @@ def classify_dialogue(
 
     if not normalized_location_keys:
         normalized_location_keys = set(normalized_location_map)
+
+    traveler_name = normalized_speaker_map.get(normalize_name("Traveler"), "")
 
     prompts: dict[str, dict[str, int]] = {key: {} for key in PROMPT_GROUP_KEYS}
     defaults: dict[str, dict[str, str]] = {key: {} for key in PROMPT_GROUP_KEYS}
@@ -279,7 +282,14 @@ def classify_dialogue(
                     if "{RUBY#" in token or "{NON_BREAK_SPACE}" in token:
                         continue
 
-                    add_prompt("variables", token, token)
+                    variable_default = token
+
+                    if traveler_name:
+                        variable_default = token.replace(
+                            "{NICKNAME}", traveler_name
+                        )
+
+                    add_prompt("variables", token, variable_default)
 
                     if token not in variable_contexts:
                         variable_contexts[token] = _variable_context(

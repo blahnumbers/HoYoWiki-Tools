@@ -83,7 +83,7 @@ def translation_dialog() -> None:
 
     has_prefilled_values = any(
         value and value != key
-        for group in ("speakers", "locations", "labels")
+        for group in ("speakers", "locations", "labels", "variables")
         for key, value in (result.defaults.get(group) or {}).items()
     )
 
