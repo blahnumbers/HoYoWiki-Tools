@@ -410,7 +410,16 @@ def _parse_objectives(
     dialogue_header_index: int,
     excluded_rows: set[int],
 ) -> list[dict[str, str]]:
-    objectives_header_index = _find_header(rows, "Quest Objectives")
+    objectives_header_index = None
+
+    # "Quest Objective" is also used inside the dialogue section as a step
+    # marker, so the fallback is only accepted before the dialogue starts.
+    for candidate in ("Quest Objectives", "Quest Objective"):
+        candidate_index = _find_header(rows, candidate)
+
+        if candidate_index is not None and candidate_index < dialogue_header_index:
+            objectives_header_index = candidate_index
+            break
 
     if objectives_header_index is None:
         return []

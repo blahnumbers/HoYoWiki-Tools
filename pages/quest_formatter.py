@@ -183,6 +183,15 @@ def _render_import_mode() -> None:
         )
     )
 
+    if not quest.objectives:
+        st.warning(
+            "No quest objectives were found in this file. This usually means the "
+            "`Quest Objectives` header is missing or misspelled (for example, "
+            "`Quest objective`). Please check the source sheet — quests are "
+            "generally expected to have at least one objective.",
+            icon = ":material/warning:",
+        )
+
     missing_translations = quest.missing_translations(target_language)
 
     if missing_translations:
