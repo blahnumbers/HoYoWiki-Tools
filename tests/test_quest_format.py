@@ -261,6 +261,154 @@ class FormattingTests(unittest.TestCase):
 
         self.assertEqual(output.count("<table>"), output.count("</table>"))
 
+    def test_consecutive_action_rows_share_one_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["", "", "", "Katheryne"],
+                    "text": ["Line one", "Line two", "Line three", "Hello"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(result.df, "EN")
+
+        self.assertEqual(output.count("<table>"), 1)
+
+        table_start = output.index("<table>")
+        table_end = output.index("</table>") + len("</table>")
+        action_table = output[table_start:table_end]
+
+        for line in ("Line one", "Line two", "Line three"):
+            self.assertIn(line, action_table)
+
+    def test_actions_separated_by_blank_use_separate_tables(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["", "", "", ""],
+                    "text": ["Line one", "Line two", "", "Line three"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(result.df, "EN")
+
+        self.assertEqual(output.count("<table>"), 2)
+
+    def test_condition_between_choice_branches_is_outside_previous_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Choice",
+                        "1. Traveler",
+                        "Alia",
+                        "(If condition)",
+                        "2. Traveler",
+                        "Paimon",
+                    ],
+                    "text": [
+                        "",
+                        "First branch",
+                        "First dialogue",
+                        "",
+                        "Second branch",
+                        "Second dialogue",
+                    ],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(result.df, "EN")
+
+        self.assertEqual(output.count("<table>"), 2)
+
+        first_table_start = output.index("<table>")
+        first_table_end = output.index("</table>") + len("</table>")
+        first_table = output[first_table_start:first_table_end]
+
+        self.assertNotIn("(If condition)", first_table)
+
+        condition_index = output.index("(If condition)")
+        second_table_index = output.index("<table>", first_table_end)
+
+        self.assertGreater(condition_index, first_table_end)
+        self.assertLess(condition_index, second_table_index)
+
+    def test_consecutive_conditions_before_choice_branch_are_outside(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Choice",
+                        "1. Traveler",
+                        "Alia",
+                        "(If condition A)",
+                        "(If condition B)",
+                        "2. Traveler",
+                        "Paimon",
+                    ],
+                    "text": [
+                        "",
+                        "First branch",
+                        "First dialogue",
+                        "",
+                        "",
+                        "Second branch",
+                        "Second dialogue",
+                    ],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(result.df, "EN")
+
+        first_table_end = output.index("</table>") + len("</table>")
+        first_table = output[:first_table_end]
+
+        self.assertNotIn("(If condition A)", first_table)
+        self.assertNotIn("(If condition B)", first_table)
+        self.assertLess(
+            output.index("(If condition A)"),
+            output.index("(If condition B)"),
+        )
+        self.assertLess(
+            output.index("(If condition B)"),
+            output.index("<table>", first_table_end),
+        )
+
+    def test_condition_before_dialogue_stays_inside_choice_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Choice", "1. Traveler", "Alia", "(If condition)", "Alia"],
+                    "text": ["", "First branch", "First dialogue", "", "Conditional dialogue"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(result.df, "EN")
+
+        self.assertEqual(output.count("<table>"), 1)
+
+        table_start = output.index("<table>")
+        table_end = output.index("</table>") + len("</table>")
+        choice_table = output[table_start:table_end]
+
+        self.assertIn("(If condition)", choice_table)
+        self.assertIn("Conditional dialogue", choice_table)
+
     def test_prepare_text_handles_non_breaking_spaces_and_ruby(self) -> None:
         self.assertEqual(
             quest_format.prepare_text("A{NON_BREAK_SPACE}B"),

@@ -346,6 +346,30 @@ def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") ->
             if row_index < (len(classified_dialogue_df) - 1)
             else None
         )
+        next_content_type = next_row_type
+        lookahead_index = row_index + 1
+
+        while (
+            lookahead_index < len(classified_dialogue_df)
+            and classified_dialogue_df.at[lookahead_index, "type"] == "blank"
+        ):
+            lookahead_index += 1
+
+        if lookahead_index < len(classified_dialogue_df):
+            next_content_type = classified_dialogue_df.at[lookahead_index, "type"]
+
+        next_note_target_type = next_content_type
+        note_lookahead_index = row_index + 1
+
+        while (
+            note_lookahead_index < len(classified_dialogue_df)
+            and classified_dialogue_df.at[note_lookahead_index, "type"]
+            in {"blank", "sub_mission"}
+        ):
+            note_lookahead_index += 1
+
+        if note_lookahead_index < len(classified_dialogue_df):
+            next_note_target_type = classified_dialogue_df.at[note_lookahead_index, "type"]
 
         text = prepare_text(str(row["text"]))
         header = str(row["header"])
@@ -418,7 +442,7 @@ def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") ->
             case "choice_flag":
                 continue
             case "choice_branch":
-                if last_row_type != "choice_flag":
+                if last_row_type != "choice_flag" and "choice_branch" in opened_tags:
                     opened_tags.reverse()
 
                     html_data += """
@@ -428,9 +452,7 @@ def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") ->
                     </table>
                     """
 
-                    if "choice_branch" in opened_tags:
-                        opened_tags.remove("choice_branch")
-
+                    opened_tags.remove("choice_branch")
                     opened_tags.reverse()
 
                 match language_preset:
@@ -478,28 +500,60 @@ def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") ->
                             text,
                         )
             case "sub_mission":
+                if (
+                    "choice_branch" in opened_tags
+                    and next_note_target_type in {"choice_branch", "choice_flag"}
+                ):
+                    opened_tags.reverse()
+
+                    html_data += """
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    """
+
+                    opened_tags.remove("choice_branch")
+                    opened_tags.reverse()
+
                 if last_row_type == "objective":
                     html_data += "<p></p>"
 
                 html_data += "<p><em>%s</em></p>" % header
             case "action":
-                html_data += """
-                <p></p>
-                <table>
-                    <tbody>
-                        <tr>
-                            <td colspan="1" rowspan="1">
-                                <p><span style="color: rgb(255, 255, 255);">%s</span></p>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-                <p></p>
-                """ % text
+                if opened_tags and opened_tags[-1] != "action":
+                    # Already inside an optional/choice table; keep the
+                    # phrase in that table instead of nesting another one.
+                    html_data += """<p><span style="color: rgb(255, 255, 255);">%s</span></p>""" % text
+                elif last_row_type == "action":
+                    # Continue the current group of speaker-less phrases.
+                    html_data += """<p><span style="color: rgb(255, 255, 255);">%s</span></p>""" % text
+                else:
+                    html_data += """
+                    <p></p>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td colspan="1" rowspan="1">
+                                    <p><span style="color: rgb(255, 255, 255);">%s</span></p>
+                    """ % text
+
+                    opened_tags.append("action")
+
+                if opened_tags and opened_tags[-1] == "action" and next_row_type != "action":
+                    html_data += """
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p></p>
+                    """
+
+                    opened_tags.pop()
             case "blank":
                 if opened_tags and next_row_type != "choice_flag":
                     match opened_tags[-1]:
-                        case "addopt" | "choice_branch":
+                        case "addopt" | "choice_branch" | "action":
                             html_data += """
                                         </td>
                                     </tr>
@@ -515,7 +569,7 @@ def format_dialogue(classified_dialogue_df: pd.DataFrame, preset: str = "EN") ->
     if opened_tags:
         for tag in reversed(opened_tags):
             match tag:
-                case "addopt" | "choice_branch":
+                case "addopt" | "choice_branch" | "action":
                     html_data += """
                                 </td>
                             </tr>

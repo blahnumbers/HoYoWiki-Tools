@@ -181,11 +181,11 @@ def parse_quest_file(file_bytes: bytes, file_name: str) -> QuestData:
     language_row_index, language_columns = _find_language_row(rows)
     languages = list(language_columns)
 
-    dialogue_header_index = _find_header(rows, "Dialogue")
+    dialogue_header_index = _find_header(rows, ("Dialogue", "Dialogues"))
 
     if dialogue_header_index is None:
         raise QuestDataError(
-            "Could not find the 'Dialogue' section in this file. "
+            "Could not find the 'Dialogue' or 'Dialogues' section in this file. "
             "Make sure the file follows the Quest Team localization sheet format."
         )
 
@@ -305,11 +305,16 @@ def _find_language_row(rows: list[list[str]]) -> tuple[int, dict[str, int]]:
     )
 
 
-def _find_header(rows: list[list[str]], label: str, start_index: int = 0) -> int | None:
-    normalized_label = label.strip().casefold()
+def _find_header(
+    rows: list[list[str]], labels: str | tuple[str, ...], start_index: int = 0
+) -> int | None:
+    if isinstance(labels, str):
+        normalized_labels = {labels.strip().casefold()}
+    else:
+        normalized_labels = {label.strip().casefold() for label in labels}
 
     for row_index in range(start_index, len(rows)):
-        if _first_cell(rows[row_index]).strip().casefold() == normalized_label:
+        if _first_cell(rows[row_index]).strip().casefold() in normalized_labels:
             return row_index
 
     return None

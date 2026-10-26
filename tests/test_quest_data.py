@@ -188,6 +188,18 @@ class QuestDataParsingTests(unittest.TestCase):
         self.assertEqual(quest.locations, [])
         self.assertEqual(quest.field_labels, [])
 
+    def test_accepts_dialogues_section_header(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Dialogues"],
+            ["Katheryne", "Hello", "Привет"],
+        ]
+        path = self._write_rows(rows, "dialogues-header.xlsx")
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+
+        self.assertEqual([entry["key"] for entry in quest.dialogue_rows], ["Katheryne"])
+
     def test_rejects_file_without_language_row(self) -> None:
         rows = [["Title", "Test"], ["Dialogue"], ["Katheryne", "Hello"]]
         path = self.directory / "invalid.xlsx"
