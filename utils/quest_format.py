@@ -66,6 +66,10 @@ RUBY_RE = re.compile(r"\s*(\S+)\{RUBY#\[.\](.+?)\}(\S+)\s*")
 GENDER_PAIR_RE = re.compile(
     r"\{F#([^{}]*)\}\{M#([^{}]*)\}|\{M#([^{}]*)\}\{F#([^{}]*)\}"
 )
+COLOR_TAG_RE = re.compile(
+    r"<color=#?([0-9A-Fa-f]{8}|[0-9A-Fa-f]{6})>(.*?)</color>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 @dataclass
@@ -384,6 +388,7 @@ def format_objective(
 
         if header:
             text = "" if row.get("text") is None else str(row["text"])
+            text = _replace_color_tags(text)
 
             if target_language == "DE":
                 text = _replace_german_gender_pairs(text)
@@ -440,7 +445,7 @@ def format_dialogue(
             next_note_target_type = classified_dialogue_df.at[note_lookahead_index, "type"]
 
         text = prepare_text(str(row["text"]), target_language)
-        header = str(row["header"])
+        header = _replace_color_tags(str(row["header"]))
 
         if target_language == "DE":
             header = _replace_german_gender_pairs(header)
@@ -660,11 +665,42 @@ def format_dialogue(
 
 
 def prepare_text(text: str, target_language: str | None = None) -> str:
+    text = _replace_color_tags(text)
+
     if target_language == "DE":
         text = _replace_german_gender_pairs(text)
 
     text = RUBY_RE.sub(_replace_ruby, text)
     return text.replace("{NON_BREAK_SPACE}", "&nbsp;")
+
+
+def _replace_color_tags(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        hex_value = match.group(1)
+        inner_text = match.group(2)
+
+        red = int(hex_value[0:2], 16)
+        green = int(hex_value[2:4], 16)
+        blue = int(hex_value[4:6], 16)
+
+        if len(hex_value) == 8:
+            alpha = int(hex_value[6:8], 16)
+        else:
+            alpha = 255
+
+        if alpha >= 255:
+            color = "rgb(%d, %d, %d)" % (red, green, blue)
+        else:
+            color = "rgba(%d, %d, %d, %s)" % (
+                red,
+                green,
+                blue,
+                round(alpha / 255, 3),
+            )
+
+        return '<span style="color: %s;">%s</span>' % (color, inner_text)
+
+    return COLOR_TAG_RE.sub(replace, text)
 
 
 def _is_german_gender_pair_token(token: str) -> bool:

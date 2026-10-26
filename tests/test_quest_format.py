@@ -753,6 +753,61 @@ class FormattingTests(unittest.TestCase):
         ruby_output = quest_format.prepare_text("pre{RUBY#[D]ruby text}base")
         self.assertIn('<custom-ruby data-ruby="prebase|ruby text">', ruby_output)
 
+    def test_color_tags_are_converted_to_html_spans(self) -> None:
+        self.assertEqual(
+            quest_format.prepare_text("<color=#00E1FFFF>Keys</color>"),
+            '<span style="color: rgb(0, 225, 255);">Keys</span>',
+        )
+        self.assertIn(
+            "rgb(255, 0, 0)",
+            quest_format.prepare_text("<color=#FF0000>Red</color>"),
+        )
+        self.assertIn(
+            "rgba(255, 0, 0, 0.502)",
+            quest_format.prepare_text("<color=#FF000080>Half</color>"),
+        )
+
+    def test_color_tags_survive_dialogue_and_objective_formatting(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["<color=#00E1FFFF>Keys</color>"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        dialogue_output = quest_format.format_dialogue(result.df, "EN")
+        self.assertIn(
+            '<span style="color: rgb(0, 225, 255);">Keys</span>',
+            dialogue_output,
+        )
+        self.assertNotIn("<color=", dialogue_output)
+
+        objective_output = quest_format.format_objective(
+            pd.DataFrame(
+                {
+                    "header": ["1"],
+                    "text": ["<color=#00E1FFFF>Keys</color>"],
+                }
+            )
+        )
+        self.assertIn(
+            '<span style="color: rgb(0, 225, 255);">Keys</span>',
+            objective_output,
+        )
+
+    def test_color_tags_and_german_gender_pairs_compose(self) -> None:
+        output = quest_format.prepare_text(
+            "<color=#00E1FFFF>{F#Die Beraterin}{M#Der Berater}</color>",
+            "DE",
+        )
+
+        self.assertIn("Der Berater/Die Beraterin", output)
+        self.assertIn("rgb(0, 225, 255)", output)
+
 
 if __name__ == "__main__":
     unittest.main()
