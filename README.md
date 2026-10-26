@@ -95,6 +95,12 @@ python -m streamlit run app.py
 
 This application is meant to be used by HoYoWiki collaborators, but is by no means officially affiliated or endorsed by HoYoverse.
 
+### Deploying to Streamlit Community Cloud
+
+Streamlit Community Cloud currently defaults to Python 3.14. The pinned `pandas` and `pyarrow` versions in `requirements.txt` do not provide Python 3.14 wheels, so dependency installation fails while trying to build `pyarrow` from source.
+
+When creating or reconfiguring the app, select **Python 3.12** (or **3.13**) under **Advanced settings**. Community Cloud does not honor `runtime.txt` or `.python-version` for this; the Python version must be set in the app's dashboard settings. If an app is already stuck on Python 3.14, delete and redeploy it with the correct version selected.
+
 ### Running the tests
 
 With the virtual environment from the installation steps activated, run:
