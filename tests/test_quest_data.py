@@ -200,6 +200,23 @@ class QuestDataParsingTests(unittest.TestCase):
 
         self.assertEqual([entry["key"] for entry in quest.dialogue_rows], ["Katheryne"])
 
+    def test_empty_objectives_dataframe_uses_text_columns(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Dialogue"],
+            ["Katheryne", "Hello", "Привет"],
+        ]
+        path = self._write_rows(rows, "no-objectives.xlsx")
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+
+        objective_df = quest.objective_dataframe("RU")
+        dialogue_df = quest.dialogue_dataframe("RU")
+
+        self.assertEqual(objective_df.shape, (0, 2))
+        self.assertEqual(objective_df.dtypes.astype(str).tolist(), ["object", "object"])
+        self.assertEqual(dialogue_df.dtypes.astype(str).tolist(), ["object", "object"])
+
     def test_rejects_file_without_language_row(self) -> None:
         rows = [["Title", "Test"], ["Dialogue"], ["Katheryne", "Hello"]]
         path = self.directory / "invalid.xlsx"

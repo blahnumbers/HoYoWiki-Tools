@@ -82,7 +82,8 @@ class QuestData:
             {
                 "header": [entry["key"] for entry in self.objectives],
                 "text": [entry.get(language, "") for entry in self.objectives],
-            }
+            },
+            dtype = str,
         )
 
     def dialogue_dataframe(self, language: str) -> pd.DataFrame:
@@ -90,7 +91,8 @@ class QuestData:
             {
                 "header": [entry["key"] for entry in self.dialogue_rows],
                 "text": [entry.get(language, "") for entry in self.dialogue_rows],
-            }
+            },
+            dtype = str,
         )
 
     def speaker_map(self, language: str) -> dict[str, str]:
