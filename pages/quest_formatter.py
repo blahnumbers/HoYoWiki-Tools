@@ -1,4 +1,5 @@
 import hashlib
+import html
 
 import pandas as pd
 import streamlit as st
@@ -13,6 +14,56 @@ OUTPUT_KEY = "quest_formatter_html"
 TARGET_LANGUAGE_KEY = "quest_formatter_target_language"
 JUST_FORMATTED_KEY = "quest_formatter_just_formatted"
 COPY_NONCE_KEY = "quest_formatter_last_copy_nonce"
+
+DIALOG_WIDTH_CSS = """
+<style>
+div[data-testid="stDialog"] div[role="dialog"] {
+    width: 100% !important;
+    max-width: 1000px !important;
+}
+</style>
+"""
+
+VARIABLE_GROUP_CSS = """
+<style>
+.st-key-bracket_content_group [data-testid="stHorizontalBlock"] {
+    gap: 0 !important;
+    align-items: stretch;
+}
+
+.st-key-bracket_content_group [data-testid="stHorizontalBlock"] [data-testid="stWidgetLabel"] {
+    display: none !important;
+}
+
+.st-key-bracket_content_group [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-end !important;
+}
+
+.st-key-bracket_content_group .input-group-text {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    box-sizing: border-box;
+    padding: 0 0.75rem;
+    overflow: hidden;
+    background: rgb(59, 67, 84);
+    border: 1px solid rgb(59, 67, 84);
+    border-right: none;
+    border-radius: 8px 0 0 8px;
+    color: rgb(250, 250, 250);
+    font-family: "Source Sans Pro", sans-serif;
+    font-size: 0.875rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.st-key-bracket_content_group [data-testid="stTextInputRootElement"] {
+    border-radius: 0 8px 8px 0 !important;
+}
+</style>
+"""
 
 
 @st.cache_data(show_spinner=False)
@@ -75,6 +126,8 @@ def translation_dialog() -> None:
     target = pending["target"]
     preset = pending["preset"]
 
+    st.markdown(DIALOG_WIDTH_CSS, unsafe_allow_html = True)
+
     st.markdown(
         "Review the fields below. Values are grouped so speaker names stay separate "
         "from conditional strings and other headers. Fields left unchanged keep the "
@@ -107,27 +160,58 @@ def translation_dialog() -> None:
         group_values: dict[str, str] = {}
         group_defaults = result.defaults.get(group_key) or {}
 
-        for original, count in items.items():
-            label = original
-            help_parts = []
+        if group_key == "variables":
+            st.markdown(VARIABLE_GROUP_CSS, unsafe_allow_html = True)
+            group_container = st.container(key = "bracket_content_group")
+        else:
+            group_container = st.container()
 
-            if count > 1:
-                help_parts.append("Used in %d rows" % count)
+        with group_container:
+            for original, count in items.items():
+                help_parts = []
 
-            if group_key == "variables":
-                context = result.variable_contexts.get(original, "")
+                if count > 1:
+                    help_parts.append("Used in %d rows" % count)
+
+                context = ""
+
+                if group_key == "variables":
+                    context = result.variable_contexts.get(original, "")
+                    help_parts.append(
+                        "Only the bracketed placeholder is editable."
+                    )
+
+                help_text = " ".join(help_parts) or None
 
                 if context:
-                    label = "%s  ·  %s" % (context, original)
+                    context_column, input_column = st.columns([1, 3])
 
-                help_parts.append("Only the bracketed placeholder is editable.")
+                    with context_column:
+                        st.markdown(
+                            '<div class="input-group-text" title="%s">%s</div>'
+                            % (
+                                html.escape(context, quote = True),
+                                html.escape(context),
+                            ),
+                            unsafe_allow_html = True,
+                        )
 
-            group_values[original] = st.text_input(
-                label,
-                value = group_defaults.get(original, original),
-                key = _translation_key(target, group_key, original),
-                help = " ".join(help_parts) or None,
-            )
+                    with input_column:
+                        group_values[original] = st.text_input(
+                            original,
+                            value = group_defaults.get(original, original),
+                            key = _translation_key(target, group_key, original),
+                            label_visibility = "collapsed",
+                            icon = ":material/translate:",
+                        )
+                else:
+                    group_values[original] = st.text_input(
+                        original,
+                        value = group_defaults.get(original, original),
+                        key = _translation_key(target, group_key, original),
+                        help = help_text,
+                        icon = ":material/translate:",
+                    )
 
         entered_values[group_key] = group_values
 
