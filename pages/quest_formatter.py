@@ -555,7 +555,7 @@ with st.expander("How to Use"):
     st.subheader("To Import a Quest Data File")
 
     st.markdown("""
-    1. Set `Input Method` to `Import File`
+    1. Make sure `Input Method` is set to `Import File` (it is the default)
     2. Upload the quest's localization file (`.xlsx` or `.csv`)
     3. Pick the target language from the languages found in the file
     4. Open the `Dialogue` tab and click on the `Format Dialogue` button
@@ -598,7 +598,7 @@ st.divider()
 input_method = st.segmented_control(
     "Input Method:",
     ["Paste Text", "Import File"],
-    default = "Paste Text",
+    default = "Import File",
     key = "quest_formatter_input_method",
 )
 
