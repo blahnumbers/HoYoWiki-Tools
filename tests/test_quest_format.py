@@ -915,6 +915,72 @@ class FormattingTests(unittest.TestCase):
 
         self.assertIn("Путешественник/ца", output)
 
+    def test_lone_female_suffix_is_merged_into_the_previous_word(self) -> None:
+        cases = (
+            ("RU", "прибыл{F#а}", "прибыл/а"),
+            ("FR", "privé{F#e}", "privé/e"),
+            ("ES", "asesor{F#a}", "asesor/a"),
+        )
+
+        for language, text, expected in cases:
+            result = quest_format.classify_dialogue(
+                pd.DataFrame({"header": ["Paimon"], "text": [text]}),
+                target_language = language,
+                prompt_variables = True,
+                prompt_headers = False,
+            )
+
+            self.assertEqual(result.prompts["variables"], {})
+
+            output = quest_format.format_dialogue(
+                result.df,
+                "EN",
+                target_language = language,
+            )
+
+            self.assertIn(expected, output)
+            self.assertNotIn("{F#", output)
+
+    def test_detached_lone_female_token_stays_a_prompt(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["прибыл {F#а}"]}),
+            target_language = "RU",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertIn("{F#а}", result.prompts["variables"])
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "RU",
+        )
+
+        self.assertIn("{F#а}", output)
+
+    def test_long_lone_female_token_stays_a_prompt(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {"header": ["Paimon"], "text": ["ты он,{F#оставившая}"]}
+            ),
+            target_language = "RU",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertIn("{F#оставившая}", result.prompts["variables"])
+
+    def test_german_lone_female_token_stays_a_prompt(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["Der {F#Beraterin}"]}),
+            target_language = "DE",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertIn("{F#Beraterin}", result.prompts["variables"])
+
     def test_prepare_text_handles_non_breaking_spaces_and_ruby(self) -> None:
         self.assertEqual(
             quest_format.prepare_text("A{NON_BREAK_SPACE}B"),

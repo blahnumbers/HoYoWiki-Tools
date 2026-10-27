@@ -602,6 +602,9 @@ input_method = st.segmented_control(
     key = "quest_formatter_input_method",
 )
 
+if input_method is None:
+    input_method = "Import File"
+
 if input_method == "Import File":
     _render_import_mode()
 else:

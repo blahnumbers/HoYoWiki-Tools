@@ -66,6 +66,7 @@ RUBY_RE = re.compile(r"\s*(\S+)\{RUBY#\[.\](.+?)\}(\S+)\s*")
 GENDER_PAIR_RE = re.compile(
     r"\{F#([^{}]*)\}\{M#([^{}]*)\}|\{M#([^{}]*)\}\{F#([^{}]*)\}"
 )
+LONE_FEMALE_RE = re.compile(r"\{F#([^{}]*)\}")
 COLOR_TAG_RE = re.compile(
     r"<color=#?([0-9A-Fa-f]{8}|[0-9A-Fa-f]{6})>(.*?)</color>",
     re.IGNORECASE | re.DOTALL,
@@ -77,6 +78,14 @@ COLOR_SPAN_RE = re.compile(
 
 # Languages where complete ``{M#...}{F#...}`` pairs are resolved automatically.
 GENDER_LANGUAGES = frozenset({"DE", "RU", "FR", "ES"})
+
+# Languages where the feminine form is built from the masculine stem, so a
+# lone ``{F#...}`` suffix can be merged into the preceding word.
+GENDER_SUFFIX_LANGUAGES = frozenset({"RU", "FR", "ES"})
+
+# A lone ``{F#...}`` token is treated as a suffix when its content is short.
+# Longer content is usually a full replacement word and stays a prompt.
+GENDER_SUFFIX_MAX_LENGTH = 4
 
 # Minimum shared prefix length before the masculine/feminine forms are
 # shortened to ``base + male suffix / female suffix``.
@@ -167,8 +176,9 @@ def classify_dialogue(
     key, which lets location headers without a comma be recognized even when
     their target translation is missing. For German, Russian, French and
     Spanish, complete gendered pairs are auto-handled instead of being added to
-    the bracket prompts. Every other header is collected into a prompt group as
-    well.
+    the bracket prompts. For Russian, French and Spanish, a short lone
+    ``{F#...}`` suffix attached to a word is merged into it as well. Every
+    other header is collected into a prompt group as well.
     """
 
     df = _prepare_frame(dialogue_df)
@@ -314,6 +324,16 @@ def classify_dialogue(
                     if (
                         target_language in GENDER_LANGUAGES
                         and _is_gender_pair_token(token)
+                    ):
+                        continue
+
+                    if (
+                        target_language in GENDER_SUFFIX_LANGUAGES
+                        and _is_lone_female_suffix_token(
+                            source,
+                            match.start(),
+                            token,
+                        )
                     ):
                         continue
 
@@ -791,6 +811,37 @@ def _is_gender_pair_token(token: str) -> bool:
     return bool(token) and GENDER_PAIR_RE.sub("", token) == ""
 
 
+def _is_lone_female_suffix_token(
+    source: str,
+    start: int,
+    token: str,
+) -> bool:
+    match = LONE_FEMALE_RE.fullmatch(token)
+
+    if match is None:
+        return False
+
+    return _is_lone_female_suffix(source, start, match.group(1))
+
+
+def _is_lone_female_suffix(source: str, start: int, content: str) -> bool:
+    if len(content) > GENDER_SUFFIX_MAX_LENGTH:
+        return False
+
+    return start > 0 and not source[start - 1].isspace()
+
+
+def _replace_lone_female(match: re.Match[str]) -> str:
+    if not _is_lone_female_suffix(
+        match.string,
+        match.start(),
+        match.group(1),
+    ):
+        return match.group(0)
+
+    return "/%s" % match.group(1)
+
+
 def _replace_gender_pairs(text: str, language: str) -> str:
     def replace(match: re.Match[str]) -> str:
         if match.group(1) is not None:
@@ -807,7 +858,12 @@ def _replace_gender_pairs(text: str, language: str) -> str:
 
         return replacement
 
-    return GENDER_PAIR_RE.sub(replace, text)
+    text = GENDER_PAIR_RE.sub(replace, text)
+
+    if language in GENDER_SUFFIX_LANGUAGES:
+        text = LONE_FEMALE_RE.sub(_replace_lone_female, text)
+
+    return text
 
 
 def _format_gender_pair(male: str, female: str, language: str) -> str:
