@@ -265,7 +265,7 @@ class ClassifyDialogueTests(unittest.TestCase):
                     "text": ["{F#Die Beraterin}{M#Der Berater}"],
                 }
             ),
-            target_language = "RU",
+            target_language = "JP",
             prompt_variables = True,
             prompt_headers = False,
         )
@@ -274,6 +274,25 @@ class ClassifyDialogueTests(unittest.TestCase):
             "{F#Die Beraterin}{M#Der Berater}",
             result.prompts["variables"],
         )
+
+    def test_shortened_gender_languages_skip_pair_prompts(self) -> None:
+        for language in ("RU", "FR", "ES"):
+            result = quest_format.classify_dialogue(
+                pd.DataFrame(
+                    {
+                        "header": ["Paimon"],
+                        "text": ["{M#Путешественник}{F#Путешественница}"],
+                    }
+                ),
+                target_language = language,
+                prompt_variables = True,
+                prompt_headers = False,
+            )
+
+            self.assertNotIn(
+                "{M#Путешественник}{F#Путешественница}",
+                result.prompts["variables"],
+            )
 
     def test_optional_prefix_uses_field_label_translation(self) -> None:
         result = quest_format.classify_dialogue(
@@ -696,7 +715,7 @@ class FormattingTests(unittest.TestCase):
                     "text": ["{F#Die Beraterin}{M#Der Berater}"],
                 }
             ),
-            target_language = "RU",
+            target_language = "JP",
             prompt_variables = False,
             prompt_headers = False,
         )
@@ -704,7 +723,7 @@ class FormattingTests(unittest.TestCase):
         output = quest_format.format_dialogue(
             result.df,
             "EN",
-            target_language = "RU",
+            target_language = "JP",
         )
 
         self.assertIn("{F#Die Beraterin}{M#Der Berater}", output)
@@ -746,6 +765,155 @@ class FormattingTests(unittest.TestCase):
         )
 
         self.assertIn("Der Berater/Die Beraterin", output)
+
+    def test_russian_gender_pairs_use_the_shared_base(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{M#Путешественник}{F#Путешественница}"],
+                }
+            ),
+            target_language = "RU",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "RU",
+        )
+
+        self.assertIn("Путешественник/ца", output)
+        self.assertNotIn("{M#", output)
+        self.assertNotIn("{F#", output)
+
+    def test_russian_gender_pairs_reverse_order_use_the_shared_base(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{F#Путешественница}{M#Путешественник}"],
+                }
+            ),
+            target_language = "RU",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "RU",
+        )
+
+        self.assertIn("Путешественник/ца", output)
+
+    def test_russian_gender_pairs_fall_back_without_a_shared_base(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": [
+                        "{M#его}{F#её} и {M#ему}{F#ей}, "
+                        "{M#силён}{F#сильна}, {M#него}{F#неё}"
+                    ],
+                }
+            ),
+            target_language = "RU",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "RU",
+        )
+
+        self.assertIn("его/её", output)
+        self.assertIn("ему/ей", output)
+        self.assertIn("силён/сильна", output)
+        self.assertIn("него/неё", output)
+
+    def test_russian_short_pronoun_pairs_are_shortened(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {"header": ["Paimon"], "text": ["{M#он}{F#она} {M#был}{F#была}"]}
+            ),
+            target_language = "RU",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "RU",
+        )
+
+        self.assertIn("он/а", output)
+        self.assertIn("был/а", output)
+
+    def test_french_gender_pairs_use_the_shared_base(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{M#acteur}{F#actrice} et {M#un}{F#une}"],
+                }
+            ),
+            target_language = "FR",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "FR",
+        )
+
+        self.assertIn("acteur/rice", output)
+        self.assertIn("un/e", output)
+
+    def test_spanish_gender_pairs_use_the_shared_base(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{M#amigo}{F#amiga} y {M#él}{F#ella}"],
+                }
+            ),
+            target_language = "ES",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "ES",
+        )
+
+        self.assertIn("amigo/a", output)
+        self.assertIn("él/ella", output)
+
+    def test_shortened_gender_pairs_in_objectives(self) -> None:
+        objective_df = pd.DataFrame(
+            {
+                "header": ["1"],
+                "text": ["{M#Путешественник}{F#Путешественница}"],
+            }
+        )
+
+        output = quest_format.format_objective(
+            objective_df,
+            target_language = "RU",
+        )
+
+        self.assertIn("Путешественник/ца", output)
 
     def test_prepare_text_handles_non_breaking_spaces_and_ruby(self) -> None:
         self.assertEqual(

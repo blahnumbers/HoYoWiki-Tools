@@ -75,6 +75,21 @@ COLOR_SPAN_RE = re.compile(
     re.DOTALL,
 )
 
+# Languages where complete ``{M#...}{F#...}`` pairs are resolved automatically.
+GENDER_LANGUAGES = frozenset({"DE", "RU", "FR", "ES"})
+
+# Minimum shared prefix length before the masculine/feminine forms are
+# shortened to ``base + male suffix / female suffix``.
+GENDER_BASE_MIN_LENGTH = 2
+
+# When both forms add a suffix after the shared prefix, the prefix needs to be
+# a real stem; otherwise the result reads poorly (``него/ё``).
+GENDER_STEM_MIN_LENGTH = 3
+
+# Suffixes that start with these characters split inside the stem
+# (``силён/ьна``), so those pairs keep their full forms.
+GENDER_BAD_SUFFIX_STARTS = ("ь", "ъ")
+
 
 @dataclass
 class ClassificationResult:
@@ -150,9 +165,10 @@ def classify_dialogue(
     section). Matching values are prefilled in the prompt groups so the user
     can still adjust them. ``location_keys`` contains every English location
     key, which lets location headers without a comma be recognized even when
-    their target translation is missing. For German, complete gendered pairs
-    are auto-handled instead of being added to the bracket prompts. Every
-    other header is collected into a prompt group as well.
+    their target translation is missing. For German, Russian, French and
+    Spanish, complete gendered pairs are auto-handled instead of being added to
+    the bracket prompts. Every other header is collected into a prompt group as
+    well.
     """
 
     df = _prepare_frame(dialogue_df)
@@ -296,8 +312,8 @@ def classify_dialogue(
                         continue
 
                     if (
-                        target_language == "DE"
-                        and _is_german_gender_pair_token(token)
+                        target_language in GENDER_LANGUAGES
+                        and _is_gender_pair_token(token)
                     ):
                         continue
 
@@ -394,8 +410,8 @@ def format_objective(
             text = "" if row.get("text") is None else str(row["text"])
             text = _replace_color_tags(text)
 
-            if target_language == "DE":
-                text = _replace_german_gender_pairs(text)
+            if target_language in GENDER_LANGUAGES:
+                text = _replace_gender_pairs(text, target_language)
 
             html_data += "<li><p>%s</p></li>" % text
 
@@ -451,8 +467,8 @@ def format_dialogue(
         text = prepare_text(str(row["text"]), target_language)
         header = _replace_color_tags(str(row["header"]))
 
-        if target_language == "DE":
-            header = _replace_german_gender_pairs(header)
+        if target_language in GENDER_LANGUAGES:
+            header = _replace_gender_pairs(header, target_language)
 
         match row["type"]:
             case "description":
@@ -711,8 +727,8 @@ def format_dialogue(
 def prepare_text(text: str, target_language: str | None = None) -> str:
     text = _replace_color_tags(text)
 
-    if target_language == "DE":
-        text = _replace_german_gender_pairs(text)
+    if target_language in GENDER_LANGUAGES:
+        text = _replace_gender_pairs(text, target_language)
 
     text = RUBY_RE.sub(_replace_ruby, text)
     return text.replace("{NON_BREAK_SPACE}", "&nbsp;")
@@ -771,11 +787,11 @@ def _wrap_with_base_color(content: str, base_color: str) -> str:
     return "".join(wrapped_parts)
 
 
-def _is_german_gender_pair_token(token: str) -> bool:
+def _is_gender_pair_token(token: str) -> bool:
     return bool(token) and GENDER_PAIR_RE.sub("", token) == ""
 
 
-def _replace_german_gender_pairs(text: str) -> str:
+def _replace_gender_pairs(text: str, language: str) -> str:
     def replace(match: re.Match[str]) -> str:
         if match.group(1) is not None:
             female = match.group(1)
@@ -784,7 +800,7 @@ def _replace_german_gender_pairs(text: str) -> str:
             male = match.group(3)
             female = match.group(4)
 
-        replacement = "%s/%s" % (male, female)
+        replacement = _format_gender_pair(male, female, language)
 
         if GENDER_PAIR_RE.match(match.string, match.end()):
             replacement += "/"
@@ -792,6 +808,54 @@ def _replace_german_gender_pairs(text: str) -> str:
         return replacement
 
     return GENDER_PAIR_RE.sub(replace, text)
+
+
+def _format_gender_pair(male: str, female: str, language: str) -> str:
+    if language == "DE":
+        return "%s/%s" % (male, female)
+
+    base = _common_prefix(male, female)
+    male_suffix = male[len(base):]
+    female_suffix = female[len(base):]
+
+    if len(base) < GENDER_BASE_MIN_LENGTH:
+        return "%s/%s" % (male, female)
+
+    if (
+        male_suffix
+        and female_suffix
+        and len(base) < GENDER_STEM_MIN_LENGTH
+    ):
+        return "%s/%s" % (male, female)
+
+    if " " in male or " " in female:
+        return "%s/%s" % (male, female)
+
+    if female_suffix.startswith(GENDER_BAD_SUFFIX_STARTS):
+        return "%s/%s" % (male, female)
+
+    if not male_suffix and not female_suffix:
+        return base
+
+    if not male_suffix:
+        return "%s/%s" % (base, female_suffix)
+
+    if not female_suffix:
+        return "%s/%s" % (male, female)
+
+    return "%s%s/%s" % (base, male_suffix, female_suffix)
+
+
+def _common_prefix(first: str, second: str) -> str:
+    length = 0
+
+    for first_char, second_char in zip(first, second):
+        if first_char != second_char:
+            break
+
+        length += 1
+
+    return first[:length]
 
 
 def _replace_ruby(match: re.Match[str]) -> str:
