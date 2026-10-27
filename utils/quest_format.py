@@ -598,23 +598,22 @@ def format_dialogue(
 
                 match language_preset:
                     case "EN":
-                        dialogue_content = _wrap_with_base_color(
-                            "%s: %s" % (header, text),
+                        dialogue_header = _wrap_with_base_color(
+                            "%s: " % header,
                             "rgb(255, 255, 255)",
                         )
-                        html_data += """<p>%s</p>""" % dialogue_content
+                        html_data += """<p>%s%s</p>""" % (
+                            dialogue_header,
+                            text,
+                        )
                     case "RU":
                         dialogue_header = _wrap_with_base_color(
                             "<strong>%s: </strong>" % header,
                             "rgb(255, 255, 255)",
                         )
-                        dialogue_text = _wrap_with_base_color(
-                            text,
-                            "rgb(255, 255, 255)",
-                        )
                         html_data += """<p>%s<br>%s</p>""" % (
                             dialogue_header,
-                            dialogue_text,
+                            text,
                         )
             case "sub_mission":
                 if (

@@ -463,13 +463,9 @@ class FormattingTests(unittest.TestCase):
         english_output = quest_format.format_dialogue(result.df, "EN")
         russian_output = quest_format.format_dialogue(result.df, "RU")
 
+        self.assertIn("Katheryne: </span>Hello", english_output)
         self.assertIn(
-            '<span style="color: rgb(255, 255, 255);">Katheryne: Hello</span>',
-            english_output,
-        )
-        self.assertIn(
-            '<strong>Katheryne: </strong></span><br>'
-            '<span style="color: rgb(255, 255, 255);">Hello</span></p>',
+            "<strong>Katheryne: </strong></span><br>Hello</p>",
             russian_output,
         )
         self.assertNotIn("<p>Hello</p>", russian_output)
@@ -810,10 +806,11 @@ class FormattingTests(unittest.TestCase):
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
-                    "header": ["Paimon", "Paimon"],
+                    "header": ["", "", "Paimon"],
                     "text": [
                         "Obtain the <color=#00E1FFFF>Keys</color> and go",
                         "<color=#00E1FFFF>Keys</color> and go",
+                        "Obtain the <color=#00E1FFFF>Keys</color> and go",
                     ],
                 }
             ),
@@ -825,12 +822,20 @@ class FormattingTests(unittest.TestCase):
         russian_output = quest_format.format_dialogue(result.df, "RU")
 
         for output in (english_output, russian_output):
+            # Action rows keep the explicit white base color after a color.
             self.assertIn(
                 '</span><span style="color: rgb(255, 255, 255);"> and go</span>',
                 output,
             )
+            # The base color must not wrap the colored span itself.
             self.assertNotIn(
-                'color: rgb(255, 255, 255);">Obtain the <span style="color: rgb(0, 225, 255)',
+                'color: rgb(255, 255, 255);">Obtain the '
+                '<span style="color: rgb(0, 225, 255)',
+                output,
+            )
+            # Dialogue body text keeps the editor default color.
+            self.assertIn(
+                '<span style="color: rgb(0, 225, 255);">Keys</span> and go</p>',
                 output,
             )
 
