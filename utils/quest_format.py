@@ -105,6 +105,7 @@ GENDER_LANGUAGE_PREFERENCES = {
     "RU": GENDER_MODE_MALE_FIRST,
     "FR": GENDER_MODE_MALE_FIRST,
     "ES": GENDER_MODE_MALE_FIRST,
+    "IT": GENDER_MODE_MALE,
 }
 
 # A lone ``{F#...}`` token is treated as a suffix when its content is short.
@@ -315,6 +316,12 @@ def classify_dialogue(
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header
             localized_location = normalized_location_map.get(normalized_header)
+
+            if not localized_location:
+                localized_location = _localize_compound_location(
+                    normalized_header,
+                    normalized_location_map,
+                )
 
             if localized_location:
                 defaults["locations"][normalized_header] = localized_location
@@ -1067,6 +1074,30 @@ def _variable_context(source: str, start: int) -> str:
         context = "…" + context[-30:]
 
     return context
+
+
+def _localize_compound_location(
+    header: str,
+    location_map: dict[str, str],
+) -> str:
+    """Translate ``Region, Subarea`` headers part by part when all parts match."""
+
+    parts = [part.strip() for part in header.split(",")]
+
+    if len(parts) < 2:
+        return ""
+
+    localized_parts = []
+
+    for part in parts:
+        localized = location_map.get(part)
+
+        if not localized:
+            return ""
+
+        localized_parts.append(localized)
+
+    return ", ".join(localized_parts)
 
 
 def _localize_header_prefix(

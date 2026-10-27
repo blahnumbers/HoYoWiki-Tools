@@ -368,6 +368,33 @@ class ClassifyDialogueTests(unittest.TestCase):
         self.assertIn("Цель задания", headers)
         self.assertIn("Описание задания", headers)
 
+    def test_compound_location_is_translated_part_by_part(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Wavechaser Plain, Nod-Krai"], "text": [""]}),
+            location_map = {
+                "Wavechaser Plain": "Равнина Волногона",
+                "Nod-Krai": "Нод-Край",
+            },
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["locations"]["Wavechaser Plain, Nod-Krai"],
+            "Равнина Волногона, Нод-Край",
+        )
+
+    def test_compound_location_needs_every_part(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Wavechaser Plain, Nod-Krai"], "text": [""]}),
+            location_map = {"Wavechaser Plain": "Равнина Волногона"},
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["locations"]["Wavechaser Plain, Nod-Krai"],
+            "Wavechaser Plain, Nod-Krai",
+        )
+
     def test_location_key_without_comma_is_classified_as_location(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame({"header": ["Snezhnaya"], "text": [""]}),
@@ -798,6 +825,8 @@ class FormattingTests(unittest.TestCase):
                 quest_format.gender_mode_for(language),
                 "M/F",
             )
+
+        self.assertEqual(quest_format.gender_mode_for("IT"), "M")
 
     def test_female_first_mode_keeps_full_forms(self) -> None:
         result = quest_format.classify_dialogue(

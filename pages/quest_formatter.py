@@ -1,5 +1,6 @@
 import hashlib
 import json
+import urllib.request
 
 import pandas as pd
 import streamlit as st
@@ -7,7 +8,19 @@ import streamlit.components.v1 as components
 
 from utils import quest_format
 from utils.copy_component import copy_formatted_text
-from utils.quest_data import LANGUAGE_LABELS, QuestData, QuestDataError, parse_quest_file
+from utils.knowledge_base import (
+    KNOWLEDGE_BASE_EXPORT_URL,
+    KNOWLEDGE_BASE_VIEW_URL,
+    KnowledgeBase,
+    parse_knowledge_base,
+)
+from utils.quest_data import (
+    LANGUAGE_LABELS,
+    QuestData,
+    QuestDataError,
+    normalize_name,
+    parse_quest_file,
+)
 
 
 PENDING_KEY = "quest_formatter_pending"
@@ -125,6 +138,70 @@ def _render_gender_mode(language: str) -> str:
     )
 
     return mode or preferred
+
+
+@st.cache_data(ttl = 3600, show_spinner = False)
+def _fetch_knowledge_base() -> tuple[KnowledgeBase | None, str | None]:
+    try:
+        with urllib.request.urlopen(
+            KNOWLEDGE_BASE_EXPORT_URL,
+            timeout = 25,
+        ) as response:
+            payload = response.read()
+    except Exception as error:
+        return None, str(error)
+
+    try:
+        return parse_knowledge_base(payload), None
+    except Exception as error:
+        return None, str(error)
+
+
+def _render_knowledge_base_control() -> KnowledgeBase | None:
+    enabled = st.toggle(
+        "Use knowledge base",
+        value = True,
+        key = "quest_formatter_use_knowledge_base",
+        help = (
+            "Prefill speaker names, locations and field labels from the "
+            "shared glossary spreadsheet."
+        ),
+    )
+
+    if not enabled:
+        return None
+
+    knowledge_base, error = _fetch_knowledge_base()
+
+    if knowledge_base is None:
+        st.warning(
+            "Could not load the knowledge base: %s" % (error or "unknown error"),
+            icon = ":material/warning:",
+        )
+
+        if st.button(
+            "Retry knowledge base",
+            key = "quest_formatter_retry_knowledge_base",
+        ):
+            _fetch_knowledge_base.clear()
+            st.rerun()
+
+        return None
+
+    counts = knowledge_base.counts
+
+    st.caption(
+        "Knowledge base: %d locations · %d names · %d special words · "
+        "[open the sheet](%s)"
+        % (
+            counts["locations"],
+            counts["names"],
+            counts["special_words"],
+            KNOWLEDGE_BASE_VIEW_URL,
+        )
+    )
+
+    return knowledge_base
 
 
 def _handle_dialogue(
@@ -320,6 +397,21 @@ def _render_import_mode() -> None:
     )
 
     gender_mode = _render_gender_mode(target_language)
+    knowledge_base = _render_knowledge_base_control()
+
+    kb_maps = (
+        knowledge_base.maps_for(target_language)
+        if knowledge_base is not None
+        else {"speakers": {}, "locations": {}, "labels": {}}
+    )
+
+    speaker_map = {**kb_maps["speakers"], **quest.speaker_map(target_language)}
+    location_map = {**kb_maps["locations"], **quest.location_map(target_language)}
+    field_label_map = {**kb_maps["labels"], **quest.field_label_map(target_language)}
+    location_keys = quest.location_keys()
+
+    if knowledge_base is not None:
+        location_keys = location_keys | knowledge_base.location_keys()
 
     title = quest.title_for(target_language)
 
@@ -365,10 +457,37 @@ def _render_import_mode() -> None:
             icon = ":material/warning:",
         )
 
+    def _uncovered_by_knowledge_base(entries, kb_map):
+        kb_keys = {normalize_name(key) for key in kb_map}
+
+        return [
+            entry
+            for entry in entries
+            if normalize_name(entry["key"]) not in kb_keys
+        ]
+
     missing_segments = (
-        ("Special Speaker", quest.missing_special_translations(target_language)),
-        ("Location", quest.missing_location_translations(target_language)),
-        ("Field Label", quest.missing_field_label_translations(target_language)),
+        (
+            "Special Speaker",
+            _uncovered_by_knowledge_base(
+                quest.missing_special_translations(target_language),
+                kb_maps["speakers"],
+            ),
+        ),
+        (
+            "Location",
+            _uncovered_by_knowledge_base(
+                quest.missing_location_translations(target_language),
+                kb_maps["locations"],
+            ),
+        ),
+        (
+            "Field Label",
+            _uncovered_by_knowledge_base(
+                quest.missing_field_label_translations(target_language),
+                kb_maps["labels"],
+            ),
+        ),
     )
     missing_parts = []
 
@@ -483,10 +602,10 @@ def _render_import_mode() -> None:
             _handle_dialogue(
                 dialogue_df,
                 preset = preset,
-                speaker_map = quest.speaker_map(target_language),
-                location_map = quest.location_map(target_language),
-                field_label_map = quest.field_label_map(target_language),
-                location_keys = quest.location_keys(),
+                speaker_map = speaker_map,
+                location_map = location_map,
+                field_label_map = field_label_map,
+                location_keys = location_keys,
                 target = target_language,
                 gender_mode = gender_mode,
                 prompt_variables = True,
@@ -503,6 +622,13 @@ def _render_paste_mode() -> None:
     ) or "EN"
 
     gender_mode = _render_gender_mode(preset)
+    knowledge_base = _render_knowledge_base_control()
+
+    kb_maps = (
+        knowledge_base.maps_for(preset)
+        if knowledge_base is not None
+        else {"speakers": {}, "locations": {}, "labels": {}}
+    )
 
     default_table_data = {"header": [""], "text": [""]}
     default_table_df = pd.DataFrame(default_table_data)
@@ -546,7 +672,14 @@ def _render_paste_mode() -> None:
             _handle_dialogue(
                 dialogue_df,
                 preset = preset,
-                speaker_map = None,
+                speaker_map = kb_maps["speakers"],
+                location_map = kb_maps["locations"],
+                field_label_map = kb_maps["labels"],
+                location_keys = (
+                    knowledge_base.location_keys()
+                    if knowledge_base is not None
+                    else set()
+                ),
                 target = preset,
                 gender_mode = gender_mode,
                 prompt_variables = True,
@@ -618,7 +751,7 @@ with st.expander("How to Use"):
     """)
 
     st.caption("""
-    Values provided in the file's `Translation` section (`Special Speaker`, `Location`, `Field Label`) are prefilled automatically and can still be adjusted. Conditional strings, optional sections, and any missing values require manual input.
+    Values provided in the file's `Translation` section (`Special Speaker`, `Location`, `Field Label`) are prefilled automatically and can still be adjusted. Missing entries are looked up in the shared knowledge base spreadsheet when `Use knowledge base` is enabled. Conditional strings, optional sections, and any remaining values require manual input.
     """)
 
     st.subheader("To Format Quest Objective (Paste)")
