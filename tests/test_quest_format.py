@@ -239,7 +239,7 @@ class ClassifyDialogueTests(unittest.TestCase):
 
         self.assertEqual(result.defaults["variables"]["{NICKNAME}"], "{NICKNAME}")
 
-    def test_german_gender_pairs_are_skipped_from_variable_prompts(self) -> None:
+    def test_german_gender_pairs_are_prefilled_in_variable_prompts(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -252,9 +252,12 @@ class ClassifyDialogueTests(unittest.TestCase):
             prompt_headers = False,
         )
 
-        self.assertNotIn(
-            "{F#Die Beraterin}{M#Der Berater}",
-            result.prompts["variables"],
+        token = "{F#Die Beraterin}{M#Der Berater}"
+
+        self.assertIn(token, result.prompts["variables"])
+        self.assertEqual(
+            result.defaults["variables"][token],
+            "Der Berater/Die Beraterin",
         )
 
     def test_german_gender_pairs_are_prompted_for_other_languages(self) -> None:
@@ -270,12 +273,15 @@ class ClassifyDialogueTests(unittest.TestCase):
             prompt_headers = False,
         )
 
-        self.assertIn(
-            "{F#Die Beraterin}{M#Der Berater}",
-            result.prompts["variables"],
+        token = "{F#Die Beraterin}{M#Der Berater}"
+
+        self.assertIn(token, result.prompts["variables"])
+        self.assertEqual(
+            result.defaults["variables"][token],
+            "Der Berater/Die Beraterin",
         )
 
-    def test_shortened_gender_languages_skip_pair_prompts(self) -> None:
+    def test_shortened_gender_languages_prefill_pair_prompts(self) -> None:
         for language in ("RU", "FR", "ES"):
             result = quest_format.classify_dialogue(
                 pd.DataFrame(
@@ -289,9 +295,12 @@ class ClassifyDialogueTests(unittest.TestCase):
                 prompt_headers = False,
             )
 
-            self.assertNotIn(
-                "{M#Путешественник}{F#Путешественница}",
-                result.prompts["variables"],
+            token = "{M#Путешественник}{F#Путешественница}"
+
+            self.assertIn(token, result.prompts["variables"])
+            self.assertEqual(
+                result.defaults["variables"][token],
+                "Путешественник/ца",
             )
 
     def test_optional_prefix_uses_field_label_translation(self) -> None:
@@ -707,7 +716,30 @@ class FormattingTests(unittest.TestCase):
 
         self.assertIn("Der Berater/Die Beraterin", output)
 
-    def test_german_gender_pairs_are_not_converted_for_other_languages(self) -> None:
+    def test_gender_mode_none_keeps_pairs_untouched(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{F#Die Beraterin}{M#Der Berater}"],
+                }
+            ),
+            target_language = "JP",
+            gender_mode = "None",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "JP",
+            gender_mode = "None",
+        )
+
+        self.assertIn("{F#Die Beraterin}{M#Der Berater}", output)
+
+    def test_other_languages_use_male_first_by_default(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -726,7 +758,128 @@ class FormattingTests(unittest.TestCase):
             target_language = "JP",
         )
 
-        self.assertIn("{F#Die Beraterin}{M#Der Berater}", output)
+        self.assertIn("Der Berater/Die Beraterin", output)
+
+    def test_gender_modes_change_the_pair_output(self) -> None:
+        cases = (
+            ("M/F", "Der Berater/Die Beraterin"),
+            ("F/M", "Die Beraterin/Der Berater"),
+            ("M", "Der Berater"),
+            ("F", "Die Beraterin"),
+            ("None", "{F#Die Beraterin}{M#Der Berater}"),
+        )
+
+        for mode, expected in cases:
+            result = quest_format.classify_dialogue(
+                pd.DataFrame(
+                    {
+                        "header": ["Paimon"],
+                        "text": ["{F#Die Beraterin}{M#Der Berater}"],
+                    }
+                ),
+                target_language = "DE",
+                gender_mode = mode,
+                prompt_variables = False,
+                prompt_headers = False,
+            )
+
+            output = quest_format.format_dialogue(
+                result.df,
+                "EN",
+                target_language = "DE",
+                gender_mode = mode,
+            )
+
+            self.assertIn(expected, output)
+
+    def test_gender_mode_preferences(self) -> None:
+        for language in ("DE", "RU", "FR", "ES", "JP", None):
+            self.assertEqual(
+                quest_format.gender_mode_for(language),
+                "M/F",
+            )
+
+    def test_female_first_mode_keeps_full_forms(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{M#Путешественник}{F#Путешественница}"],
+                }
+            ),
+            target_language = "RU",
+            gender_mode = "F/M",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "RU",
+            gender_mode = "F/M",
+        )
+
+        self.assertIn("Путешественница/Путешественник", output)
+
+    def test_male_only_mode_drops_the_female_suffix(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["прибыл{F#а}"]}),
+            target_language = "RU",
+            gender_mode = "M",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(result.defaults["variables"]["{F#а}"], "")
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "RU",
+            gender_mode = "M",
+        )
+
+        self.assertIn("прибыл", output)
+        self.assertNotIn("{F#", output)
+
+    def test_female_only_mode_keeps_the_female_suffix(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["прибыл{F#а}"]}),
+            target_language = "RU",
+            gender_mode = "F",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(result.defaults["variables"]["{F#а}"], "а")
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "RU",
+            gender_mode = "F",
+        )
+
+        self.assertIn("прибыла", output)
+
+    def test_gender_prompts_are_applied_when_unchanged(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["прибыл{F#а}"]}),
+            target_language = "RU",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "RU",
+        )
+
+        self.assertIn("прибыл/а", output)
 
     def test_german_multiple_gender_pairs_are_converted(self) -> None:
         result = quest_format.classify_dialogue(
@@ -741,7 +894,10 @@ class FormattingTests(unittest.TestCase):
             prompt_headers = False,
         )
 
-        self.assertEqual(result.prompts["variables"], {})
+        self.assertEqual(
+            result.defaults["variables"]["{F#A}{M#B}{F#C}{M#D}"],
+            "B/A/D/C",
+        )
 
         output = quest_format.format_dialogue(
             result.df,
@@ -917,12 +1073,12 @@ class FormattingTests(unittest.TestCase):
 
     def test_lone_female_suffix_is_merged_into_the_previous_word(self) -> None:
         cases = (
-            ("RU", "прибыл{F#а}", "прибыл/а"),
-            ("FR", "privé{F#e}", "privé/e"),
-            ("ES", "asesor{F#a}", "asesor/a"),
+            ("RU", "прибыл{F#а}", "{F#а}", "/а", "прибыл/а"),
+            ("FR", "privé{F#e}", "{F#e}", "/e", "privé/e"),
+            ("ES", "asesor{F#a}", "{F#a}", "/a", "asesor/a"),
         )
 
-        for language, text, expected in cases:
+        for language, text, token, default, expected in cases:
             result = quest_format.classify_dialogue(
                 pd.DataFrame({"header": ["Paimon"], "text": [text]}),
                 target_language = language,
@@ -930,7 +1086,10 @@ class FormattingTests(unittest.TestCase):
                 prompt_headers = False,
             )
 
-            self.assertEqual(result.prompts["variables"], {})
+            self.assertEqual(
+                result.defaults["variables"][token],
+                default,
+            )
 
             output = quest_format.format_dialogue(
                 result.df,

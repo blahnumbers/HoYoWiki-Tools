@@ -53,7 +53,9 @@ PROMPT_GROUPS = (
         "Bracket Content",
         "Placeholder content found in the text, such as {NICKNAME} or gendered "
         "options. {NICKNAME} is prefilled with the localized Traveler name when "
-        "available. Leave a field as-is when it does not need a change.",
+        "available, and gendered options are prefilled using the selected "
+        "`Gendered content handling` mode. Leave a field as-is when it does not "
+        "need a change.",
     ),
 )
 
@@ -76,12 +78,34 @@ COLOR_SPAN_RE = re.compile(
     re.DOTALL,
 )
 
-# Languages where complete ``{M#...}{F#...}`` pairs are resolved automatically.
-GENDER_LANGUAGES = frozenset({"DE", "RU", "FR", "ES"})
-
 # Languages where the feminine form is built from the masculine stem, so a
 # lone ``{F#...}`` suffix can be merged into the preceding word.
 GENDER_SUFFIX_LANGUAGES = frozenset({"RU", "FR", "ES"})
+
+# How gendered ``{M#...}{F#...}`` content is written in the output.
+GENDER_MODE_MALE_FIRST = "M/F"
+GENDER_MODE_FEMALE_FIRST = "F/M"
+GENDER_MODE_MALE = "M"
+GENDER_MODE_FEMALE = "F"
+GENDER_MODE_NONE = "None"
+
+GENDER_MODES = (
+    GENDER_MODE_MALE_FIRST,
+    GENDER_MODE_FEMALE_FIRST,
+    GENDER_MODE_MALE,
+    GENDER_MODE_FEMALE,
+    GENDER_MODE_NONE,
+)
+
+DEFAULT_GENDER_MODE = GENDER_MODE_MALE_FIRST
+
+# Languages with a dedicated convention keep it; everything else uses M/F.
+GENDER_LANGUAGE_PREFERENCES = {
+    "DE": GENDER_MODE_MALE_FIRST,
+    "RU": GENDER_MODE_MALE_FIRST,
+    "FR": GENDER_MODE_MALE_FIRST,
+    "ES": GENDER_MODE_MALE_FIRST,
+}
 
 # A lone ``{F#...}`` token is treated as a suffix when its content is short.
 # Longer content is usually a full replacement word and stays a prompt.
@@ -164,6 +188,7 @@ def classify_dialogue(
     field_label_map: dict[str, str] | None = None,
     location_keys: set[str] | None = None,
     target_language: str | None = None,
+    gender_mode: str | None = None,
     prompt_variables: bool = True,
     prompt_headers: bool = True,
 ) -> ClassificationResult:
@@ -174,12 +199,13 @@ def classify_dialogue(
     section). Matching values are prefilled in the prompt groups so the user
     can still adjust them. ``location_keys`` contains every English location
     key, which lets location headers without a comma be recognized even when
-    their target translation is missing. For German, Russian, French and
-    Spanish, complete gendered pairs are auto-handled instead of being added to
-    the bracket prompts. For Russian, French and Spanish, a short lone
-    ``{F#...}`` suffix attached to a word is merged into it as well. Every
-    other header is collected into a prompt group as well.
+    their target translation is missing. Gendered content is prefilled with the
+    value produced by ``gender_mode`` (the language's preferred mode by
+    default), so editors can still adjust it. Every other header is collected
+    into a prompt group as well.
     """
+
+    mode = gender_mode or gender_mode_for(target_language)
 
     df = _prepare_frame(dialogue_df)
     normalized_speaker_map = {
@@ -321,28 +347,22 @@ def classify_dialogue(
                     if "{RUBY#" in token or "{NON_BREAK_SPACE}" in token:
                         continue
 
-                    if (
-                        target_language in GENDER_LANGUAGES
-                        and _is_gender_pair_token(token)
-                    ):
-                        continue
+                    auto_value = _auto_gender_value(
+                        source,
+                        match,
+                        target_language,
+                        mode,
+                    )
 
-                    if (
-                        target_language in GENDER_SUFFIX_LANGUAGES
-                        and _is_lone_female_suffix_token(
-                            source,
-                            match.start(),
-                            token,
-                        )
-                    ):
-                        continue
+                    if auto_value is not None:
+                        variable_default = auto_value
+                    else:
+                        variable_default = token
 
-                    variable_default = token
-
-                    if traveler_name:
-                        variable_default = token.replace(
-                            "{NICKNAME}", traveler_name
-                        )
+                        if traveler_name:
+                            variable_default = token.replace(
+                                "{NICKNAME}", traveler_name
+                            )
 
                     add_prompt("variables", token, variable_default)
 
@@ -420,6 +440,7 @@ def apply_translations(
 def format_objective(
     objective_df: pd.DataFrame,
     target_language: str | None = None,
+    gender_mode: str | None = None,
 ) -> str:
     html_data = "<ol>"
 
@@ -430,8 +451,12 @@ def format_objective(
             text = "" if row.get("text") is None else str(row["text"])
             text = _replace_color_tags(text)
 
-            if target_language in GENDER_LANGUAGES:
-                text = _replace_gender_pairs(text, target_language)
+            if target_language:
+                text = _replace_gender_pairs(
+                    text,
+                    target_language,
+                    gender_mode or gender_mode_for(target_language),
+                )
 
             html_data += "<li><p>%s</p></li>" % text
 
@@ -444,6 +469,7 @@ def format_dialogue(
     classified_dialogue_df: pd.DataFrame,
     preset: str = "EN",
     target_language: str | None = None,
+    gender_mode: str | None = None,
 ) -> str:
     language_preset = preset if preset in {"EN", "RU"} else "EN"
 
@@ -484,11 +510,15 @@ def format_dialogue(
         if note_lookahead_index < len(classified_dialogue_df):
             next_note_target_type = classified_dialogue_df.at[note_lookahead_index, "type"]
 
-        text = prepare_text(str(row["text"]), target_language)
+        text = prepare_text(str(row["text"]), target_language, gender_mode)
         header = _replace_color_tags(str(row["header"]))
 
-        if target_language in GENDER_LANGUAGES:
-            header = _replace_gender_pairs(header, target_language)
+        if target_language:
+            header = _replace_gender_pairs(
+                header,
+                target_language,
+                gender_mode or gender_mode_for(target_language),
+            )
 
         match row["type"]:
             case "description":
@@ -744,11 +774,19 @@ def format_dialogue(
     return html_data
 
 
-def prepare_text(text: str, target_language: str | None = None) -> str:
+def prepare_text(
+    text: str,
+    target_language: str | None = None,
+    gender_mode: str | None = None,
+) -> str:
     text = _replace_color_tags(text)
 
-    if target_language in GENDER_LANGUAGES:
-        text = _replace_gender_pairs(text, target_language)
+    if target_language:
+        text = _replace_gender_pairs(
+            text,
+            target_language,
+            gender_mode or gender_mode_for(target_language),
+        )
 
     text = RUBY_RE.sub(_replace_ruby, text)
     return text.replace("{NON_BREAK_SPACE}", "&nbsp;")
@@ -842,7 +880,69 @@ def _replace_lone_female(match: re.Match[str]) -> str:
     return "/%s" % match.group(1)
 
 
-def _replace_gender_pairs(text: str, language: str) -> str:
+def _drop_lone_female(match: re.Match[str]) -> str:
+    if not _is_lone_female_suffix(
+        match.string,
+        match.start(),
+        match.group(1),
+    ):
+        return match.group(0)
+
+    return ""
+
+
+def _keep_lone_female(match: re.Match[str]) -> str:
+    if not _is_lone_female_suffix(
+        match.string,
+        match.start(),
+        match.group(1),
+    ):
+        return match.group(0)
+
+    return match.group(1)
+
+
+def gender_mode_for(language: str | None) -> str:
+    """Return the preferred gendered content mode for a language."""
+
+    return GENDER_LANGUAGE_PREFERENCES.get(language or "", DEFAULT_GENDER_MODE)
+
+
+def _auto_gender_value(
+    source: str,
+    match: re.Match[str],
+    language: str,
+    mode: str,
+) -> str | None:
+    """Return the automatic value for a gendered token, if there is one."""
+
+    if not language or mode == GENDER_MODE_NONE:
+        return None
+
+    token = match.group(0)
+
+    if _is_gender_pair_token(token):
+        return _replace_gender_pairs(token, language, mode)
+
+    if (
+        language in GENDER_SUFFIX_LANGUAGES
+        and _is_lone_female_suffix_token(source, match.start(), token)
+    ):
+        content = LONE_FEMALE_RE.fullmatch(token).group(1)
+
+        if mode == GENDER_MODE_MALE:
+            return ""
+        if mode == GENDER_MODE_FEMALE:
+            return content
+        return "/%s" % content
+
+    return None
+
+
+def _replace_gender_pairs(text: str, language: str, mode: str) -> str:
+    if mode == GENDER_MODE_NONE:
+        return text
+
     def replace(match: re.Match[str]) -> str:
         if match.group(1) is not None:
             female = match.group(1)
@@ -851,7 +951,7 @@ def _replace_gender_pairs(text: str, language: str) -> str:
             male = match.group(3)
             female = match.group(4)
 
-        replacement = _format_gender_pair(male, female, language)
+        replacement = _format_gender_pair(male, female, language, mode)
 
         if GENDER_PAIR_RE.match(match.string, match.end()):
             replacement += "/"
@@ -861,13 +961,32 @@ def _replace_gender_pairs(text: str, language: str) -> str:
     text = GENDER_PAIR_RE.sub(replace, text)
 
     if language in GENDER_SUFFIX_LANGUAGES:
-        text = LONE_FEMALE_RE.sub(_replace_lone_female, text)
+        if mode == GENDER_MODE_MALE:
+            text = LONE_FEMALE_RE.sub(_drop_lone_female, text)
+        elif mode == GENDER_MODE_FEMALE:
+            text = LONE_FEMALE_RE.sub(_keep_lone_female, text)
+        else:
+            text = LONE_FEMALE_RE.sub(_replace_lone_female, text)
 
     return text
 
 
-def _format_gender_pair(male: str, female: str, language: str) -> str:
-    if language == "DE":
+def _format_gender_pair(
+    male: str,
+    female: str,
+    language: str,
+    mode: str,
+) -> str:
+    if mode == GENDER_MODE_MALE:
+        return male
+
+    if mode == GENDER_MODE_FEMALE:
+        return female
+
+    if mode == GENDER_MODE_FEMALE_FIRST:
+        return "%s/%s" % (female, male)
+
+    if language not in GENDER_SUFFIX_LANGUAGES:
         return "%s/%s" % (male, female)
 
     base = _common_prefix(male, female)

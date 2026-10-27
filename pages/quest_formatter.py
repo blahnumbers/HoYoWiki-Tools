@@ -105,6 +105,28 @@ def _set_output(formatted_html: str) -> None:
     st.session_state[JUST_FORMATTED_KEY] = True
 
 
+GENDER_MODE_HELP = (
+    "How gendered placeholders such as {M#...}{F#...} are written. "
+    "`M/F` keeps the masculine form first, `F/M` the feminine form first, "
+    "`M` and `F` keep only one form, and `None` leaves the placeholders for "
+    "manual input."
+)
+
+
+def _render_gender_mode(language: str) -> str:
+    preferred = quest_format.gender_mode_for(language)
+
+    mode = st.segmented_control(
+        "Gendered content handling:",
+        list(quest_format.GENDER_MODES),
+        default = preferred,
+        key = "quest_formatter_gender_mode_%s" % language,
+        help = GENDER_MODE_HELP,
+    )
+
+    return mode or preferred
+
+
 def _handle_dialogue(
     dialogue_df: pd.DataFrame,
     preset: str,
@@ -113,6 +135,7 @@ def _handle_dialogue(
     field_label_map: dict[str, str] | None = None,
     location_keys: set[str] | None = None,
     target: str = "EN",
+    gender_mode: str | None = None,
     prompt_variables: bool = True,
     prompt_headers: bool = True,
 ) -> None:
@@ -123,6 +146,7 @@ def _handle_dialogue(
         field_label_map = field_label_map,
         location_keys = location_keys,
         target_language = target,
+        gender_mode = gender_mode,
         prompt_variables = prompt_variables,
         prompt_headers = prompt_headers,
     )
@@ -132,11 +156,19 @@ def _handle_dialogue(
             "result": result,
             "preset": preset,
             "target": target,
+            "gender_mode": gender_mode,
         }
         translation_dialog()
     else:
         quest_format.apply_translations(result.df, {}, result.defaults)
-        _set_output(quest_format.format_dialogue(result.df, preset, target))
+        _set_output(
+            quest_format.format_dialogue(
+                result.df,
+                preset,
+                target,
+                gender_mode,
+            )
+        )
 
 
 @st.dialog("Content Replacement", width = "large")
@@ -150,6 +182,7 @@ def translation_dialog() -> None:
     result: quest_format.ClassificationResult = pending["result"]
     target = pending["target"]
     preset = pending["preset"]
+    gender_mode = pending.get("gender_mode")
 
     st.markdown(DIALOG_WIDTH_CSS, unsafe_allow_html = True)
 
@@ -167,8 +200,9 @@ def translation_dialog() -> None:
 
     if has_prefilled_values:
         st.caption(
-            "Values provided by the file's `Translation` section are prefilled "
-            "below and can be adjusted before formatting."
+            "Values from the file's `Translation` section and the selected "
+            "`Gendered content handling` mode are prefilled below and can be "
+            "adjusted before formatting."
         )
 
     entered_values: dict[str, dict[str, str]] = {}
@@ -232,7 +266,14 @@ def translation_dialog() -> None:
     if st.button("Format", type = "primary", key = "quest_formatter_apply_translations"):
         with st.spinner("Formatting...", show_time = True):
             quest_format.apply_translations(result.df, entered_values, result.defaults)
-            _set_output(quest_format.format_dialogue(result.df, preset, target))
+            _set_output(
+                quest_format.format_dialogue(
+                    result.df,
+                    preset,
+                    target,
+                    gender_mode,
+                )
+            )
             st.session_state[PENDING_KEY] = None
 
         st.rerun()
@@ -277,6 +318,8 @@ def _render_import_mode() -> None:
         format_func = lambda code: "%s — %s" % (code, LANGUAGE_LABELS.get(code, code)),
         key = TARGET_LANGUAGE_KEY,
     )
+
+    gender_mode = _render_gender_mode(target_language)
 
     title = quest.title_for(target_language)
 
@@ -414,6 +457,7 @@ def _render_import_mode() -> None:
                 quest_format.format_objective(
                     objective_df,
                     target_language = target_language,
+                    gender_mode = gender_mode,
                 )
             )
 
@@ -444,18 +488,21 @@ def _render_import_mode() -> None:
                 field_label_map = quest.field_label_map(target_language),
                 location_keys = quest.location_keys(),
                 target = target_language,
+                gender_mode = gender_mode,
                 prompt_variables = True,
                 prompt_headers = target_language != "EN",
             )
 
 
 def _render_paste_mode() -> None:
-    st.segmented_control(
+    preset = st.segmented_control(
         "Language Format Preset:",
         ["EN", "RU"],
         default = "EN",
         key = "quest_formatter_preset",
-    )
+    ) or "EN"
+
+    gender_mode = _render_gender_mode(preset)
 
     default_table_data = {"header": [""], "text": [""]}
     default_table_df = pd.DataFrame(default_table_data)
@@ -477,7 +524,13 @@ def _render_paste_mode() -> None:
 
         if st.button("Format", type = "primary", key = "format_objective_button"):
             objective_df.fillna("", inplace = True)
-            _set_output(quest_format.format_objective(objective_df))
+            _set_output(
+                quest_format.format_objective(
+                    objective_df,
+                    target_language = preset,
+                    gender_mode = gender_mode,
+                )
+            )
 
     with dialogue_tab:
         dialogue_df = st.data_editor(
@@ -489,13 +542,13 @@ def _render_paste_mode() -> None:
 
         if st.button("Format", type = "primary", key = "format_dialogue_button"):
             dialogue_df.fillna("", inplace = True)
-            preset = st.session_state.get("quest_formatter_preset") or "EN"
 
             _handle_dialogue(
                 dialogue_df,
                 preset = preset,
                 speaker_map = None,
                 target = preset,
+                gender_mode = gender_mode,
                 prompt_variables = True,
                 prompt_headers = True,
             )
@@ -557,7 +610,7 @@ with st.expander("How to Use"):
     st.markdown("""
     1. Make sure `Input Method` is set to `Import File` (it is the default)
     2. Upload the quest's localization file (`.xlsx` or `.csv`)
-    3. Pick the target language from the languages found in the file
+    3. Pick the target language from the languages found in the file and choose how gendered content should be written under `Gendered content handling`
     4. Open the `Dialogue` tab and click on the `Format Dialogue` button
     5. If prompted, fill in the Content Replacement form (speaker names are kept separate from conditional strings)
     6. Click on the `Copy Formatted Text` button that just appeared
