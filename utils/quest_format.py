@@ -70,6 +70,10 @@ COLOR_TAG_RE = re.compile(
     r"<color=#?([0-9A-Fa-f]{8}|[0-9A-Fa-f]{6})>(.*?)</color>",
     re.IGNORECASE | re.DOTALL,
 )
+COLOR_SPAN_RE = re.compile(
+    r'(<span style="color: [^"]+;">.*?</span>)',
+    re.DOTALL,
+)
 
 
 @dataclass
@@ -454,29 +458,37 @@ def format_dialogue(
             case "description":
                 match language_preset:
                     case "EN":
+                        description_content = _wrap_with_base_color(
+                            "<strong>%s: </strong> %s" % (header, text),
+                            "rgb(255, 255, 255)",
+                        )
                         html_data += """
                         <table>
                             <tbody>
                                 <tr>
                                     <td colspan="1" rowspan="1">
-                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong> %s</span></p>
+                                        <p>%s</p>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
-                        """ % (header, text)
+                        """ % description_content
                     case "RU":
+                        description_header = _wrap_with_base_color(
+                            "<strong>%s: </strong>" % header,
+                            "rgb(255, 255, 255)",
+                        )
                         html_data += """
                         <table>
                             <tbody>
                                 <tr>
                                     <td colspan="1" rowspan="1">
-                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong></span>%s</p>
+                                        <p>%s%s</p>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
-                        """ % (header, text)
+                        """ % (description_header, text)
             case "objective":
                 match language_preset:
                     case "EN":
@@ -492,17 +504,21 @@ def format_dialogue(
                         </table>
                         """ % (header, text)
                     case "RU":
+                        objective_content = _wrap_with_base_color(
+                            "<strong>%s: </strong>%s" % (header, text),
+                            "rgb(255, 255, 255)",
+                        )
                         html_data += """
                         <table>
                             <tbody>
                                 <tr>
                                     <td colspan="1" rowspan="1">
-                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong>%s</span></p>
+                                        <p>%s</p>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
-                        """ % (header, text)
+                        """ % objective_content
             case "missing":
                 continue
             case "addopt":
@@ -533,47 +549,72 @@ def format_dialogue(
 
                 match language_preset:
                     case "EN":
+                        choice_content = _wrap_with_base_color(
+                            "%s: %s" % (header, text),
+                            "rgb(255, 255, 255)",
+                        )
                         html_data += """
                         <table>
                             <tbody>
                                 <tr>
                                     <td colspan="1" rowspan="1">
-                                        <p><span style="color: rgb(255, 255, 255);">%s: %s</span></p>
-                        """ % (header, text)
+                                        <p>%s</p>
+                        """ % choice_content
                     case "RU":
+                        choice_content = _wrap_with_base_color(
+                            "<strong>%s: </strong>%s" % (header, text),
+                            "rgb(255, 255, 255)",
+                        )
                         html_data += """
                         <table>
                             <tbody>
                                 <tr>
                                     <td colspan="1" rowspan="1">
-                                        <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong>%s</span></p>
-                        """ % (header, text)
+                                        <p>%s</p>
+                        """ % choice_content
 
                 opened_tags.append("choice_branch")
             case "location":
                 match language_preset:
                     case "EN":
+                        location_content = _wrap_with_base_color(
+                            "<strong>%s</strong>" % header,
+                            "rgb(236, 229, 216)",
+                        )
                         html_data += """
-                        <p><span style="color: rgb(236, 229, 216);"><strong>%s</strong></span></p>
-                        """ % header
+                        <p>%s</p>
+                        """ % location_content
                     case "RU":
+                        location_content = _wrap_with_base_color(
+                            "<strong>%s</strong>" % header,
+                            "rgb(255, 255, 255)",
+                        )
                         html_data += """
-                        <p><span style="color: rgb(255, 255, 255);"><strong>%s</strong></span></p>
-                        """ % header
+                        <p>%s</p>
+                        """ % location_content
             case "dialogue":
                 if last_row_type == "objective":
                     html_data += "<p></p>"
 
                 match language_preset:
                     case "EN":
-                        html_data += """<p><span style="color: rgb(255, 255, 255);">%s: </span>%s</p>""" % (
-                            header,
-                            text,
+                        dialogue_content = _wrap_with_base_color(
+                            "%s: %s" % (header, text),
+                            "rgb(255, 255, 255)",
                         )
+                        html_data += """<p>%s</p>""" % dialogue_content
                     case "RU":
-                        html_data += """<p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong></span><br>%s</p>""" % (
-                            header,
+                        dialogue_header = _wrap_with_base_color(
+                            "<strong>%s: </strong>" % header,
+                            "rgb(255, 255, 255)",
+                        )
+                        dialogue_text = _wrap_with_base_color(
                             text,
+                            "rgb(255, 255, 255)",
+                        )
+                        html_data += """<p>%s<br>%s</p>""" % (
+                            dialogue_header,
+                            dialogue_text,
                         )
             case "sub_mission":
                 if (
@@ -602,14 +643,18 @@ def format_dialogue(
                     if bool(row.get("bold", False))
                     else text
                 )
+                action_html = _wrap_with_base_color(
+                    action_text,
+                    "rgb(255, 255, 255)",
+                )
 
                 if opened_tags and opened_tags[-1] != "action":
                     # Already inside an optional/choice table; keep the
                     # phrase in that table instead of nesting another one.
-                    html_data += """<p><span style="color: rgb(255, 255, 255);">%s</span></p>""" % action_text
+                    html_data += """<p>%s</p>""" % action_html
                 elif last_row_type == "action":
                     # Continue the current group of speaker-less phrases.
-                    html_data += """<p><span style="color: rgb(255, 255, 255);">%s</span></p>""" % action_text
+                    html_data += """<p>%s</p>""" % action_html
                 else:
                     html_data += """
                     <p></p>
@@ -617,8 +662,8 @@ def format_dialogue(
                         <tbody>
                             <tr>
                                 <td colspan="1" rowspan="1">
-                                    <p><span style="color: rgb(255, 255, 255);">%s</span></p>
-                    """ % action_text
+                                    <p>%s</p>
+                    """ % action_html
 
                     opened_tags.append("action")
 
@@ -701,6 +746,30 @@ def _replace_color_tags(text: str) -> str:
         return '<span style="color: %s;">%s</span>' % (color, inner_text)
 
     return COLOR_TAG_RE.sub(replace, text)
+
+
+def _wrap_with_base_color(content: str, base_color: str) -> str:
+    """Wrap content in a base color without nesting colored spans.
+
+    The WET editor can lose the outer color after a nested colored span, so
+    split the base span around any inline color spans instead.
+    """
+
+    parts = COLOR_SPAN_RE.split(content)
+    wrapped_parts = []
+
+    for part in parts:
+        if not part:
+            continue
+
+        if COLOR_SPAN_RE.fullmatch(part):
+            wrapped_parts.append(part)
+        else:
+            wrapped_parts.append(
+                '<span style="color: %s;">%s</span>' % (base_color, part)
+            )
+
+    return "".join(wrapped_parts)
 
 
 def _is_german_gender_pair_token(token: str) -> bool:

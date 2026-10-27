@@ -463,8 +463,15 @@ class FormattingTests(unittest.TestCase):
         english_output = quest_format.format_dialogue(result.df, "EN")
         russian_output = quest_format.format_dialogue(result.df, "RU")
 
-        self.assertIn("Katheryne: </span>Hello", english_output)
-        self.assertIn("<strong>Katheryne: </strong></span><br>Hello</p>", russian_output)
+        self.assertIn(
+            '<span style="color: rgb(255, 255, 255);">Katheryne: Hello</span>',
+            english_output,
+        )
+        self.assertIn(
+            '<strong>Katheryne: </strong></span><br>'
+            '<span style="color: rgb(255, 255, 255);">Hello</span></p>',
+            russian_output,
+        )
         self.assertNotIn("<p>Hello</p>", russian_output)
 
     def test_format_dialogue_balances_tables(self) -> None:
@@ -798,6 +805,34 @@ class FormattingTests(unittest.TestCase):
             '<span style="color: rgb(0, 225, 255);">Keys</span>',
             objective_output,
         )
+
+    def test_text_after_colored_spans_keeps_base_color(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon", "Paimon"],
+                    "text": [
+                        "Obtain the <color=#00E1FFFF>Keys</color> and go",
+                        "<color=#00E1FFFF>Keys</color> and go",
+                    ],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        english_output = quest_format.format_dialogue(result.df, "EN")
+        russian_output = quest_format.format_dialogue(result.df, "RU")
+
+        for output in (english_output, russian_output):
+            self.assertIn(
+                '</span><span style="color: rgb(255, 255, 255);"> and go</span>',
+                output,
+            )
+            self.assertNotIn(
+                'color: rgb(255, 255, 255);">Obtain the <span style="color: rgb(0, 225, 255)',
+                output,
+            )
 
     def test_color_tags_and_german_gender_pairs_compose(self) -> None:
         output = quest_format.prepare_text(
