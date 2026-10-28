@@ -140,6 +140,25 @@ def _render_gender_mode(language: str) -> str:
     return mode or preferred
 
 
+COLLAPSE_SPEAKERS_HELP = (
+    "Merge consecutive dialogue lines from the same speaker into one paragraph, "
+    "using a line break instead of a new paragraph."
+)
+
+
+def _render_collapse_speakers(language: str) -> bool:
+    default = language in quest_format.COLLAPSE_SPEAKER_LANGUAGES
+
+    return bool(
+        st.toggle(
+            "Collapse repeating speaker lines",
+            value = default,
+            key = "quest_formatter_collapse_speakers_%s" % language,
+            help = COLLAPSE_SPEAKERS_HELP,
+        )
+    )
+
+
 @st.cache_data(ttl = 3600, show_spinner = "Loading knowledge base…")
 def _fetch_knowledge_base() -> tuple[KnowledgeBase | None, str | None]:
     try:
@@ -228,6 +247,7 @@ def _handle_dialogue(
     material_map: dict[str, str] | None = None,
     target: str = "EN",
     gender_mode: str | None = None,
+    collapse_speakers: bool = False,
     prompt_variables: bool = True,
     prompt_headers: bool = True,
 ) -> None:
@@ -250,6 +270,7 @@ def _handle_dialogue(
             "preset": preset,
             "target": target,
             "gender_mode": gender_mode,
+            "collapse_speakers": collapse_speakers,
         }
         translation_dialog()
     else:
@@ -260,6 +281,7 @@ def _handle_dialogue(
                 preset,
                 target,
                 gender_mode,
+                collapse_speakers,
             )
         )
 
@@ -276,6 +298,7 @@ def translation_dialog() -> None:
     target = pending["target"]
     preset = pending["preset"]
     gender_mode = pending.get("gender_mode")
+    collapse_speakers = pending.get("collapse_speakers", False)
 
     st.markdown(DIALOG_WIDTH_CSS, unsafe_allow_html = True)
 
@@ -365,6 +388,7 @@ def translation_dialog() -> None:
                     preset,
                     target,
                     gender_mode,
+                    collapse_speakers,
                 )
             )
             st.session_state[PENDING_KEY] = None
@@ -413,6 +437,7 @@ def _render_import_mode() -> None:
     )
 
     gender_mode = _render_gender_mode(target_language)
+    collapse_speakers = _render_collapse_speakers(target_language)
     knowledge_base = _render_knowledge_base_control()
 
     kb_maps = (
@@ -634,6 +659,7 @@ def _render_import_mode() -> None:
                 material_map = kb_maps["materials"],
                 target = target_language,
                 gender_mode = gender_mode,
+                collapse_speakers = collapse_speakers,
                 prompt_variables = True,
                 prompt_headers = target_language != "EN",
             )
@@ -648,6 +674,7 @@ def _render_paste_mode() -> None:
     ) or "EN"
 
     gender_mode = _render_gender_mode(preset)
+    collapse_speakers = _render_collapse_speakers(preset)
     knowledge_base = _render_knowledge_base_control()
 
     kb_maps = (
@@ -715,6 +742,7 @@ def _render_paste_mode() -> None:
                 material_map = kb_maps["materials"],
                 target = preset,
                 gender_mode = gender_mode,
+                collapse_speakers = collapse_speakers,
                 prompt_variables = True,
                 prompt_headers = True,
             )

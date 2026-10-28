@@ -598,6 +598,91 @@ class FormattingTests(unittest.TestCase):
         )
         self.assertNotIn("<p>Hello</p>", russian_output)
 
+    def test_repeating_speaker_lines_collapse_into_one_paragraph(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Anastasya", "Anastasya", "Paimon"],
+                    "text": ["First line.", "Second line.", "Paimon line."],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            collapse_speakers = True,
+        )
+
+        self.assertIn(
+            "<strong>Anastasya: </strong></span>"
+            "<br>First line.<br>Second line.</p>",
+            output,
+        )
+        self.assertEqual(output.count("Anastasya"), 1)
+        self.assertIn("Paimon line.", output)
+
+    def test_repeating_speaker_lines_stay_separate_by_default(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Anastasya", "Anastasya"],
+                    "text": ["First line.", "Second line."],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(result.df, "RU")
+
+        self.assertEqual(output.count("Anastasya"), 2)
+        self.assertIn("First line.</p>", output)
+        self.assertIn("Second line.</p>", output)
+
+    def test_repeating_speaker_lines_collapse_with_the_english_preset(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon", "Paimon"],
+                    "text": ["First line.", "Second line."],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            collapse_speakers = True,
+        )
+
+        self.assertIn("Paimon: </span>First line.<br>Second line.</p>", output)
+        self.assertEqual(output.count("Paimon"), 1)
+
+    def test_blank_row_prevents_speaker_collapsing(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Anastasya", "", "Anastasya"],
+                    "text": ["First line.", "", "Second line."],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            collapse_speakers = True,
+        )
+
+        self.assertEqual(output.count("Anastasya"), 2)
+
     def test_format_dialogue_balances_tables(self) -> None:
         result = quest_format.classify_dialogue(pd.DataFrame(DIALOGUE_ROWS))
 

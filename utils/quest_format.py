@@ -101,6 +101,9 @@ GENDER_MODES = (
 
 DEFAULT_GENDER_MODE = GENDER_MODE_MALE_FIRST
 
+# Languages where consecutive lines from the same speaker are merged by default.
+COLLAPSE_SPEAKER_LANGUAGES = frozenset({"RU", "JP"})
+
 # Languages with a dedicated convention keep it; everything else uses M/F.
 GENDER_LANGUAGE_PREFERENCES = {
     "DE": GENDER_MODE_MALE_FIRST,
@@ -498,6 +501,7 @@ def format_dialogue(
     preset: str = "EN",
     target_language: str | None = None,
     gender_mode: str | None = None,
+    collapse_speakers: bool = False,
 ) -> str:
     language_preset = preset if preset in {"EN", "RU"} else "EN"
 
@@ -507,6 +511,11 @@ def format_dialogue(
     for row_index, row in classified_dialogue_df.iterrows():
         last_row_type = (
             classified_dialogue_df.at[row_index - 1, "type"] if row_index > 0 else None
+        )
+        previous_header = (
+            str(classified_dialogue_df.at[row_index - 1, "header"])
+            if row_index > 0
+            else ""
         )
         next_row_type = (
             classified_dialogue_df.at[row_index + 1, "type"]
@@ -690,25 +699,34 @@ def format_dialogue(
                 if last_row_type == "objective":
                     html_data += "<p></p>"
 
-                match language_preset:
-                    case "EN":
-                        dialogue_header = _wrap_with_base_color(
-                            "%s: " % header,
-                            "rgb(255, 255, 255)",
-                        )
-                        html_data += """<p>%s%s</p>""" % (
-                            dialogue_header,
-                            text,
-                        )
-                    case "RU":
-                        dialogue_header = _wrap_with_base_color(
-                            "<strong>%s: </strong>" % header,
-                            "rgb(255, 255, 255)",
-                        )
-                        html_data += """<p>%s<br>%s</p>""" % (
-                            dialogue_header,
-                            text,
-                        )
+                if (
+                    collapse_speakers
+                    and last_row_type == "dialogue"
+                    and previous_header == header
+                    and html_data.endswith("</p>")
+                    and text.strip()
+                ):
+                    html_data = html_data[:-4] + "<br>%s</p>" % text
+                else:
+                    match language_preset:
+                        case "EN":
+                            dialogue_header = _wrap_with_base_color(
+                                "%s: " % header,
+                                "rgb(255, 255, 255)",
+                            )
+                            html_data += """<p>%s%s</p>""" % (
+                                dialogue_header,
+                                text,
+                            )
+                        case "RU":
+                            dialogue_header = _wrap_with_base_color(
+                                "<strong>%s: </strong>" % header,
+                                "rgb(255, 255, 255)",
+                            )
+                            html_data += """<p>%s<br>%s</p>""" % (
+                                dialogue_header,
+                                text,
+                            )
             case "sub_mission":
                 if (
                     "choice_branch" in opened_tags
