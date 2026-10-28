@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import html
 import re
+import time
 from dataclasses import dataclass, field
 
 import pandas as pd
 
 from utils.quest_data import normalize_name
+
+# Used by the page to detect a module left behind by a hot reload.
+_LOADED_AT = time.time()
 
 
 SPEAKER_TYPES = frozenset({"dialogue", "choice_branch"})

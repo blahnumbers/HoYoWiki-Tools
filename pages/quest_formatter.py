@@ -1,5 +1,7 @@
 import hashlib
+import importlib
 import json
+import os
 import urllib.request
 
 import pandas as pd
@@ -21,6 +23,13 @@ from utils.quest_data import (
     normalize_name,
     parse_quest_file,
 )
+
+# Streamlit Cloud can hot-reload this page while keeping an older
+# ``utils.quest_format`` in memory. Reload it when the source file is newer.
+if getattr(quest_format, "_LOADED_AT", 0) < os.path.getmtime(
+    quest_format.__file__
+):
+    quest_format = importlib.reload(quest_format)
 
 
 PENDING_KEY = "quest_formatter_pending"
@@ -351,9 +360,11 @@ def translation_dialog() -> None:
 
             if group_key == "variables":
                 context = result.variable_contexts.get(original, "")
-                suffix_context = result.variable_suffix_contexts.get(
-                    original, ""
-                )
+                suffix_context = getattr(
+                    result,
+                    "variable_suffix_contexts",
+                    {},
+                ).get(original, "")
                 help_parts.append("Only the bracketed placeholder is editable.")
 
             help_text = " ".join(help_parts) or None
