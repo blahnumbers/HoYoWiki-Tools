@@ -53,9 +53,9 @@ PROMPT_GROUPS = (
         "Bracket Content",
         "Placeholder content found in the text, such as {NICKNAME} or gendered "
         "options. {NICKNAME} is prefilled with the localized Traveler name when "
-        "available, and gendered options are prefilled using the selected "
-        "`Gendered content handling` mode. Leave a field as-is when it does not "
-        "need a change.",
+        "available (Japanese uses the `(プレイヤー名)` placeholder), and gendered "
+        "options are prefilled using the selected `Gendered content handling` "
+        "mode. Leave a field as-is when it does not need a change.",
     ),
 )
 
@@ -79,6 +79,11 @@ COLOR_SPAN_RE = re.compile(
 )
 MATERIAL_CONDITION_RE = re.compile(r"^\((Obtain|Submit)\s+(.+)\)$")
 QUOTED_NAME_RE = re.compile(r'"([^"]+)"')
+TALK_TO_RE = re.compile(
+    r"^Optional Dialogue:\s*Talk to\s+(.+)$",
+    re.IGNORECASE,
+)
+TALK_TO_KEY = "Optional Dialogue: Talk to"
 
 # Languages where the feminine form is built from the masculine stem, so a
 # lone ``{F#...}`` suffix can be merged into the preceding word.
@@ -137,6 +142,7 @@ class ClassificationResult:
     auto_localized: dict[str, str] = field(default_factory=dict)
     defaults: dict[str, dict[str, str]] = field(default_factory=dict)
     variable_contexts: dict[str, str] = field(default_factory=dict)
+    variable_suffix_contexts: dict[str, str] = field(default_factory=dict)
 
     @property
     def has_prompts(self) -> bool:
@@ -245,10 +251,14 @@ def classify_dialogue(
 
     traveler_name = normalized_speaker_map.get(normalize_name("Traveler"), "")
 
+    if target_language == "JP":
+        traveler_name = "(プレイヤー名)"
+
     prompts: dict[str, dict[str, int]] = {key: {} for key in PROMPT_GROUP_KEYS}
     defaults: dict[str, dict[str, str]] = {key: {} for key in PROMPT_GROUP_KEYS}
     auto_localized: dict[str, str] = {}
     variable_contexts: dict[str, str] = {}
+    variable_suffix_contexts: dict[str, str] = {}
 
     def add_prompt(group: str, value: str, default: str | None = None) -> None:
         if value:
@@ -308,9 +318,17 @@ def classify_dialogue(
         elif row_type == "addopt":
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header
-            localized_optional = _localize_header_prefix(
-                normalized_header, normalized_field_label_map
+            localized_optional = _localize_talk_to_header(
+                normalized_header,
+                normalized_field_label_map,
+                normalized_speaker_map,
+                target_language,
             )
+
+            if not localized_optional:
+                localized_optional = _localize_header_prefix(
+                    normalized_header, normalized_field_label_map
+                )
 
             if localized_optional:
                 defaults["optional"][normalized_header] = localized_optional
@@ -333,6 +351,7 @@ def classify_dialogue(
                 localized_location = _localize_compound_location(
                     normalized_header,
                     normalized_location_map,
+                    target_language,
                 )
 
             if localized_location:
@@ -398,9 +417,15 @@ def classify_dialogue(
                     add_prompt("variables", token, variable_default)
 
                     if token not in variable_contexts:
-                        variable_contexts[token] = _variable_context(
-                            source, match.start()
-                        )
+                        context = _variable_context(source, match.start())
+                        variable_contexts[token] = context
+
+                        if not context and (
+                            "{M#" in token or "{F#" in token
+                        ):
+                            variable_suffix_contexts[token] = (
+                                _variable_suffix_context(source, match.end())
+                            )
 
     return ClassificationResult(
         df=df,
@@ -408,6 +433,7 @@ def classify_dialogue(
         auto_localized=auto_localized,
         defaults=defaults,
         variable_contexts=variable_contexts,
+        variable_suffix_contexts=variable_suffix_contexts,
     )
 
 
@@ -1035,6 +1061,14 @@ def _format_gender_pair(
     if mode == GENDER_MODE_FEMALE:
         return female
 
+    if language == "JP":
+        # Japanese gendered words are prefixes to the rest of the phrase, so
+        # they are written with explicit symbols instead of a slash.
+        if mode == GENDER_MODE_FEMALE_FIRST:
+            return "(♀%s ♂%s)" % (female, male)
+
+        return "(♂%s ♀%s)" % (male, female)
+
     if mode == GENDER_MODE_FEMALE_FIRST:
         return "%s/%s" % (female, male)
 
@@ -1121,6 +1155,32 @@ def _variable_context(source: str, start: int) -> str:
     return context
 
 
+def _variable_suffix_context(source: str, end: int) -> str:
+    """Return the word attached after a placeholder, for prefix-style tokens."""
+
+    raw_after = source[end:]
+
+    if not raw_after or raw_after[0].isspace():
+        return ""
+
+    after = VARIABLE_RE.sub(" ", raw_after).lstrip()
+
+    if not after:
+        return ""
+
+    match = re.match(r"(\S+)", after)
+
+    if match is None:
+        return ""
+
+    context = re.sub(r"^[\W_]+|[\W_]+$", "", match.group(1))
+
+    if len(context) > 30:
+        context = context[:30] + "…"
+
+    return context
+
+
 def _localize_material_condition(
     header: str,
     field_label_map: dict[str, str],
@@ -1155,6 +1215,7 @@ def _localize_material_condition(
 def _localize_compound_location(
     header: str,
     location_map: dict[str, str],
+    language: str | None = None,
 ) -> str:
     """Translate ``Region, Subarea`` headers part by part when all parts match."""
 
@@ -1173,7 +1234,81 @@ def _localize_compound_location(
 
         localized_parts.append(localized)
 
+    if language == "JP":
+        # Japanese location names put the broader area first.
+        localized_parts.reverse()
+
     return ", ".join(localized_parts)
+
+
+def _localize_talk_to_header(
+    header: str,
+    field_label_map: dict[str, str],
+    speaker_map: dict[str, str],
+    language: str | None,
+) -> str:
+    """Localize ``Optional Dialogue: Talk to <name>`` with the name translated."""
+
+    match = TALK_TO_RE.match(header)
+
+    if match is None:
+        return ""
+
+    name = match.group(1).strip()
+    template = field_label_map.get(TALK_TO_KEY)
+
+    if not template:
+        return ""
+
+    matched_name, name_suffix = _match_speaker_name(name, speaker_map)
+    localized_name = speaker_map.get(matched_name, "")
+
+    if language == "RU" or not localized_name:
+        # Russian names need a different grammatical case, so the source name
+        # is left for the editor to adjust.
+        return "%s %s" % (template, name)
+
+    if language == "JP":
+        if "{name}" in template:
+            localized = template.replace("{name}", localized_name)
+        elif "\u3000" in template:
+            # The Japanese template uses an ideographic space as the name slot.
+            localized = template.replace("\u3000", localized_name, 1)
+        elif " " in template:
+            head, tail = template.rsplit(" ", 1)
+            localized = "%s%s%s" % (head, localized_name, tail)
+        else:
+            localized = "%s%s" % (template, localized_name)
+    else:
+        localized = "%s %s" % (template, localized_name)
+
+    if name_suffix:
+        localized = "%s %s" % (localized, name_suffix)
+
+    return localized
+
+
+def _match_speaker_name(
+    name: str,
+    speaker_map: dict[str, str],
+) -> tuple[str, str]:
+    """Split ``Anastasya again`` into a known name and its trailing words."""
+
+    normalized = normalize_name(name)
+
+    if normalized in speaker_map:
+        return normalized, ""
+
+    best = ""
+
+    for candidate in speaker_map:
+        if normalized.startswith(candidate + " ") and len(candidate) > len(best):
+            best = candidate
+
+    if not best:
+        return "", normalized
+
+    return best, normalized[len(best):].strip()
 
 
 def _localize_header_prefix(

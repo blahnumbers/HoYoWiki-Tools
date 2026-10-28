@@ -88,7 +88,11 @@ INPUT_CONTEXT_SCRIPT = """
             context.addEventListener('click', () => input.focus());
             input.style.flex = '1';
 
-            base.insertBefore(context, input);
+            if (item.position === 'after') {
+                input.after(context);
+            } else {
+                base.insertBefore(context, input);
+            }
         }
 
         if (pending > 0 && attempts < 40) {
@@ -343,15 +347,19 @@ def translation_dialog() -> None:
                 help_parts.append("Used in %d rows" % count)
 
             context = ""
+            suffix_context = ""
 
             if group_key == "variables":
                 context = result.variable_contexts.get(original, "")
+                suffix_context = result.variable_suffix_contexts.get(
+                    original, ""
+                )
                 help_parts.append("Only the bracketed placeholder is editable.")
 
             help_text = " ".join(help_parts) or None
             input_key = _translation_key(target, group_key, original)
 
-            if context:
+            if context or suffix_context:
                 group_values[original] = st.text_input(
                     original,
                     value = group_defaults.get(original, original),
@@ -359,7 +367,24 @@ def translation_dialog() -> None:
                     label_visibility = "collapsed",
                     icon = ":material/translate:",
                 )
-                context_items.append({"key": input_key, "context": context})
+
+                if context:
+                    context_items.append(
+                        {
+                            "key": input_key,
+                            "context": context,
+                            "position": "before",
+                        }
+                    )
+
+                if suffix_context:
+                    context_items.append(
+                        {
+                            "key": input_key,
+                            "context": suffix_context,
+                            "position": "after",
+                        }
+                    )
             else:
                 group_values[original] = st.text_input(
                     original,

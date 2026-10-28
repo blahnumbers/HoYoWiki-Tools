@@ -268,7 +268,7 @@ class ClassifyDialogueTests(unittest.TestCase):
                     "text": ["{F#Die Beraterin}{M#Der Berater}"],
                 }
             ),
-            target_language = "JP",
+            target_language = "KR",
             prompt_variables = True,
             prompt_headers = False,
         )
@@ -952,7 +952,7 @@ class FormattingTests(unittest.TestCase):
                     "text": ["{F#Die Beraterin}{M#Der Berater}"],
                 }
             ),
-            target_language = "JP",
+            target_language = "KR",
             prompt_variables = False,
             prompt_headers = False,
         )
@@ -960,10 +960,162 @@ class FormattingTests(unittest.TestCase):
         output = quest_format.format_dialogue(
             result.df,
             "EN",
-            target_language = "JP",
+            target_language = "KR",
         )
 
         self.assertIn("Der Berater/Die Beraterin", output)
+
+    def test_japanese_gender_pairs_use_symbols(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["{M#俺}{F#私}たち"]}),
+            target_language = "JP",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "JP",
+        )
+
+        self.assertIn("(♂俺 ♀私)たち", output)
+
+        reversed_output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "JP",
+            gender_mode = "F/M",
+        )
+
+        self.assertIn("(♀私 ♂俺)たち", reversed_output)
+
+    def test_japanese_nickname_uses_the_player_name_placeholder(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["{NICKNAME}、こんにちは"]}),
+            speaker_map = {"Traveler": "旅人"},
+            target_language = "JP",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(
+            result.defaults["variables"]["{NICKNAME}"],
+            "(プレイヤー名)",
+        )
+
+    def test_japanese_compound_locations_reverse_the_order(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {"header": ["Zapolyarny Palace, Snezhnaya"], "text": [""]}
+            ),
+            location_map = {
+                "Zapolyarny Palace": "ザポリャールヌイ宮殿",
+                "Snezhnaya": "スネージナヤ",
+            },
+            target_language = "JP",
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["locations"]["Zapolyarny Palace, Snezhnaya"],
+            "スネージナヤ, ザポリャールヌイ宮殿",
+        )
+
+    def test_prefix_token_collects_the_following_word_as_context(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {"header": ["Paimon"], "text": ["{M#俺}{F#私}なら大丈夫。"]}
+            ),
+            target_language = "JP",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(
+            result.variable_suffix_contexts["{M#俺}{F#私}"],
+            "なら大丈夫",
+        )
+
+    def test_talk_to_header_uses_the_localized_name(self) -> None:
+        cases = (
+            (
+                "DE",
+                "Optionaler Dialog: Sprich mit",
+                "Anastasia",
+                "Optionaler Dialog: Sprich mit Anastasia",
+            ),
+            (
+                "JP",
+                "任意の会話：　と話す",
+                "アナスタシヤ",
+                "任意の会話：アナスタシヤと話す",
+            ),
+        )
+
+        for language, template, localized_name, expected in cases:
+            result = quest_format.classify_dialogue(
+                pd.DataFrame(
+                    {
+                        "header": ["Optional Dialogue: Talk to Anastasya"],
+                        "text": [""],
+                    }
+                ),
+                field_label_map = {"Optional Dialogue: Talk to": template},
+                speaker_map = {"Anastasya": localized_name},
+                target_language = language,
+                prompt_headers = True,
+            )
+
+            self.assertEqual(
+                result.defaults["optional"][
+                    "Optional Dialogue: Talk to Anastasya"
+                ],
+                expected,
+            )
+
+    def test_talk_to_header_keeps_trailing_words(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Optional Dialogue: Talk to Anastasya again"],
+                    "text": [""],
+                }
+            ),
+            field_label_map = {
+                "Optional Dialogue: Talk to": "Optionaler Dialog: Sprich mit"
+            },
+            speaker_map = {"Anastasya": "Anastasia"},
+            target_language = "DE",
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["optional"][
+                "Optional Dialogue: Talk to Anastasya again"
+            ],
+            "Optionaler Dialog: Sprich mit Anastasia again",
+        )
+
+    def test_talk_to_header_keeps_the_source_name_for_russian(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {"header": ["Optional Dialogue: Talk to Anastasya"], "text": [""]}
+            ),
+            field_label_map = {
+                "Optional Dialogue: Talk to": (
+                    "Дополнительный диалог: Поговорите с"
+                )
+            },
+            speaker_map = {"Anastasya": "Анастасия"},
+            target_language = "RU",
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["optional"]["Optional Dialogue: Talk to Anastasya"],
+            "Дополнительный диалог: Поговорите с Anastasya",
+        )
 
     def test_gender_modes_change_the_pair_output(self) -> None:
         cases = (
