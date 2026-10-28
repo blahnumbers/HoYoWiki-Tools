@@ -589,7 +589,7 @@ def _render_import_mode() -> None:
             height = 360,
         )
 
-    preset = "RU" if target_language == "RU" else "EN"
+    preset = quest_format.markup_preset_for(target_language)
 
     st.caption("Output markup preset: `%s` (auto-selected from the target language)" % preset)
 

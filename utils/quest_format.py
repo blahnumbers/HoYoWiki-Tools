@@ -496,6 +496,12 @@ def format_objective(
     return html_data
 
 
+def markup_preset_for(language: str | None) -> str:
+    """Return the dialogue markup preset used for a target language."""
+
+    return "RU" if language in {"RU", "JP"} else "EN"
+
+
 def format_dialogue(
     classified_dialogue_df: pd.DataFrame,
     preset: str = "EN",
@@ -503,7 +509,7 @@ def format_dialogue(
     gender_mode: str | None = None,
     collapse_speakers: bool = False,
 ) -> str:
-    language_preset = preset if preset in {"EN", "RU"} else "EN"
+    language_preset = "RU" if preset in {"RU", "JP"} else "EN"
 
     html_data = ""
     opened_tags: list[str] = []

@@ -598,6 +598,26 @@ class FormattingTests(unittest.TestCase):
         )
         self.assertNotIn("<p>Hello</p>", russian_output)
 
+    def test_markup_preset_follows_the_target_language(self) -> None:
+        self.assertEqual(quest_format.markup_preset_for("RU"), "RU")
+        self.assertEqual(quest_format.markup_preset_for("JP"), "RU")
+        self.assertEqual(quest_format.markup_preset_for("EN"), "EN")
+        self.assertEqual(quest_format.markup_preset_for("DE"), "EN")
+
+    def test_japanese_uses_the_russian_speaker_layout(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Katheryne"], "text": ["Hello"]}),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        japanese_output = quest_format.format_dialogue(result.df, "JP")
+
+        self.assertIn(
+            "<strong>Katheryne: </strong></span><br>Hello</p>",
+            japanese_output,
+        )
+
     def test_repeating_speaker_lines_collapse_into_one_paragraph(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
