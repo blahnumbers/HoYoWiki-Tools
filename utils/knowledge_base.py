@@ -2,8 +2,8 @@
 
 The sheet is intentionally kept outside the repository so the localization
 teams can update it without a new deploy. It is downloaded as a whole
-workbook so every sheet (``Locations``, ``Names`` and ``Special Words``) is
-read in a single request.
+workbook so every sheet (``Locations``, ``Names``, ``Special Words``,
+``Quests`` and ``Materials``) is read in a single request.
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ KNOWLEDGE_BASE_VIEW_URL = (
 SECTION_LOCATIONS = "Locations"
 SECTION_NAMES = "Names"
 SECTION_SPECIAL_WORDS = "Special Words"
+SECTION_QUESTS = "Quests"
+SECTION_MATERIALS = "Materials"
 
 SOURCE_COLUMN = "EN"
 EMPTY_VALUES = frozenset({"", "nan", "none", "n/a", "-"})
@@ -39,6 +41,8 @@ class KnowledgeBase:
     locations: dict[str, dict[str, str]] = field(default_factory = dict)
     names: dict[str, dict[str, str]] = field(default_factory = dict)
     special_words: dict[str, dict[str, str]] = field(default_factory = dict)
+    quests: dict[str, dict[str, str]] = field(default_factory = dict)
+    materials: dict[str, dict[str, str]] = field(default_factory = dict)
 
     @property
     def counts(self) -> dict[str, int]:
@@ -46,6 +50,8 @@ class KnowledgeBase:
             "locations": len(self.locations),
             "names": len(self.names),
             "special_words": len(self.special_words),
+            "quests": len(self.quests),
+            "materials": len(self.materials),
         }
 
     def maps_for(self, language: str) -> dict[str, dict[str, str]]:
@@ -59,6 +65,8 @@ class KnowledgeBase:
             "speakers": {**_column_map(self.names, language), **special_words},
             "locations": _column_map(self.locations, language),
             "labels": special_words,
+            "quests": _column_map(self.quests, language),
+            "materials": _column_map(self.materials, language),
         }
 
     def location_keys(self) -> set[str]:
@@ -76,6 +84,8 @@ def parse_knowledge_base(file_bytes: bytes) -> KnowledgeBase:
         locations = _parse_sheet(workbook, SECTION_LOCATIONS),
         names = _parse_sheet(workbook, SECTION_NAMES),
         special_words = _parse_sheet(workbook, SECTION_SPECIAL_WORDS),
+        quests = _parse_sheet(workbook, SECTION_QUESTS),
+        materials = _parse_sheet(workbook, SECTION_MATERIALS),
     )
 
 

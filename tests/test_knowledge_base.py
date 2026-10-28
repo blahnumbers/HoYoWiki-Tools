@@ -34,6 +34,22 @@ def _workbook_bytes() -> bytes:
             }
         ).to_excel(writer, sheet_name = "Special Words", index = False)
 
+        pd.DataFrame(
+            {
+                "EN": ["Down in the Dumps", "Pioneers"],
+                "RU": ["По узкому пути", "Первопроходцы"],
+                "IT": ["Toccare il fondo", "Pionieri"],
+            }
+        ).to_excel(writer, sheet_name = "Quests", index = False)
+
+        pd.DataFrame(
+            {
+                "EN": ["Blue Key", "Metal Control Wheel"],
+                "RU": ["Синий ключ", "Металлическое колесо управления"],
+                "IT": ["Chiave blu", "Ruota di controllo di metallo"],
+            }
+        ).to_excel(writer, sheet_name = "Materials", index = False)
+
     return buffer.getvalue()
 
 
@@ -53,6 +69,14 @@ class KnowledgeBaseTests(unittest.TestCase):
             self.knowledge_base.special_words["Quest Objective"]["IT"],
             "Obiettivo missione",
         )
+        self.assertEqual(
+            self.knowledge_base.quests["Down in the Dumps"]["RU"],
+            "По узкому пути",
+        )
+        self.assertEqual(
+            self.knowledge_base.materials["Blue Key"]["IT"],
+            "Chiave blu",
+        )
 
     def test_keeps_the_first_duplicate(self) -> None:
         self.assertEqual(
@@ -70,13 +94,17 @@ class KnowledgeBaseTests(unittest.TestCase):
             maps["labels"]["Optional Dialogue"],
             "Необязательный диалог",
         )
+        self.assertEqual(maps["quests"]["Pioneers"], "Первопроходцы")
+        self.assertEqual(
+            maps["materials"]["Metal Control Wheel"],
+            "Металлическое колесо управления",
+        )
 
     def test_unknown_language_returns_empty_maps(self) -> None:
         maps = self.knowledge_base.maps_for("JP")
 
-        self.assertEqual(maps["speakers"], {})
-        self.assertEqual(maps["locations"], {})
-        self.assertEqual(maps["labels"], {})
+        for key in ("speakers", "locations", "labels", "quests", "materials"):
+            self.assertEqual(maps[key], {})
 
     def test_location_keys(self) -> None:
         self.assertEqual(
@@ -87,7 +115,13 @@ class KnowledgeBaseTests(unittest.TestCase):
     def test_counts(self) -> None:
         self.assertEqual(
             self.knowledge_base.counts,
-            {"locations": 2, "names": 3, "special_words": 3},
+            {
+                "locations": 2,
+                "names": 3,
+                "special_words": 3,
+                "quests": 2,
+                "materials": 2,
+            },
         )
 
 

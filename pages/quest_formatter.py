@@ -140,7 +140,7 @@ def _render_gender_mode(language: str) -> str:
     return mode or preferred
 
 
-@st.cache_data(ttl = 3600, show_spinner = False)
+@st.cache_data(ttl = 3600, show_spinner = "Loading knowledge base…")
 def _fetch_knowledge_base() -> tuple[KnowledgeBase | None, str | None]:
     try:
         with urllib.request.urlopen(
@@ -190,16 +190,30 @@ def _render_knowledge_base_control() -> KnowledgeBase | None:
 
     counts = knowledge_base.counts
 
-    st.caption(
-        "Knowledge base: %d locations · %d names · %d special words · "
-        "[open the sheet](%s)"
-        % (
-            counts["locations"],
-            counts["names"],
-            counts["special_words"],
-            KNOWLEDGE_BASE_VIEW_URL,
+    caption_column, refresh_column = st.columns([6, 1])
+
+    with caption_column:
+        st.caption(
+            "Knowledge base: %s locations · %s names · %s special words · "
+            "%s quests · %s materials · [open the sheet](%s)"
+            % (
+                format(counts["locations"], ","),
+                format(counts["names"], ","),
+                format(counts["special_words"], ","),
+                format(counts["quests"], ","),
+                format(counts["materials"], ","),
+                KNOWLEDGE_BASE_VIEW_URL,
+            )
         )
-    )
+
+    with refresh_column:
+        if st.button(
+            "Refresh",
+            key = "quest_formatter_refresh_knowledge_base",
+            help = "Reload the knowledge base from Google Sheets.",
+        ):
+            _fetch_knowledge_base.clear()
+            st.rerun()
 
     return knowledge_base
 
@@ -211,6 +225,7 @@ def _handle_dialogue(
     location_map: dict[str, str] | None = None,
     field_label_map: dict[str, str] | None = None,
     location_keys: set[str] | None = None,
+    material_map: dict[str, str] | None = None,
     target: str = "EN",
     gender_mode: str | None = None,
     prompt_variables: bool = True,
@@ -222,6 +237,7 @@ def _handle_dialogue(
         location_map = location_map,
         field_label_map = field_label_map,
         location_keys = location_keys,
+        material_map = material_map,
         target_language = target,
         gender_mode = gender_mode,
         prompt_variables = prompt_variables,
@@ -402,7 +418,13 @@ def _render_import_mode() -> None:
     kb_maps = (
         knowledge_base.maps_for(target_language)
         if knowledge_base is not None
-        else {"speakers": {}, "locations": {}, "labels": {}}
+        else {
+            "speakers": {},
+            "locations": {},
+            "labels": {},
+            "quests": {},
+            "materials": {},
+        }
     )
 
     speaker_map = {**kb_maps["speakers"], **quest.speaker_map(target_language)}
@@ -414,6 +436,9 @@ def _render_import_mode() -> None:
         location_keys = location_keys | knowledge_base.location_keys()
 
     title = quest.title_for(target_language)
+
+    if not title:
+        title = kb_maps["quests"].get(quest.title_for("EN"), "")
 
     if title:
         st.markdown("**%s**" % title)
@@ -606,6 +631,7 @@ def _render_import_mode() -> None:
                 location_map = location_map,
                 field_label_map = field_label_map,
                 location_keys = location_keys,
+                material_map = kb_maps["materials"],
                 target = target_language,
                 gender_mode = gender_mode,
                 prompt_variables = True,
@@ -627,7 +653,13 @@ def _render_paste_mode() -> None:
     kb_maps = (
         knowledge_base.maps_for(preset)
         if knowledge_base is not None
-        else {"speakers": {}, "locations": {}, "labels": {}}
+        else {
+            "speakers": {},
+            "locations": {},
+            "labels": {},
+            "quests": {},
+            "materials": {},
+        }
     )
 
     default_table_data = {"header": [""], "text": [""]}
@@ -680,6 +712,7 @@ def _render_paste_mode() -> None:
                     if knowledge_base is not None
                     else set()
                 ),
+                material_map = kb_maps["materials"],
                 target = preset,
                 gender_mode = gender_mode,
                 prompt_variables = True,

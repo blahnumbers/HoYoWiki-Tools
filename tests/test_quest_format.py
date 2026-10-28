@@ -341,6 +341,79 @@ class ClassifyDialogueTests(unittest.TestCase):
             "Optional Dialogue: Talk to Anastasya",
         )
 
+    def test_optional_prefix_prefers_the_longest_match(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Optional Dialogue: Talk to Anastasya"],
+                    "text": [""],
+                }
+            ),
+            field_label_map = {
+                "Optional Dialogue": "Необязательный диалог",
+                "Optional Dialogue: Talk to": (
+                    "Необязательный диалог: Поговорите с"
+                ),
+            },
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["optional"]["Optional Dialogue: Talk to Anastasya"],
+            "Необязательный диалог: Поговорите с Anastasya",
+        )
+
+    def test_obtain_and_submit_conditions_use_materials(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        '(Obtain "Blue Key")',
+                        '(Submit "Blue Key" and "White Key")',
+                    ],
+                    "text": ["", ""],
+                }
+            ),
+            field_label_map = {
+                "Obtain": "Получено",
+                "Submit": "Используйте",
+            },
+            material_map = {
+                "Blue Key": "Синий ключ",
+                "White Key": "Белый ключ",
+            },
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["conditions"]['(Obtain "Blue Key")'],
+            '(Получено "Синий ключ")',
+        )
+        self.assertEqual(
+            result.defaults["conditions"][
+                '(Submit "Blue Key" and "White Key")'
+            ],
+            '(Используйте "Синий ключ" and "Белый ключ")',
+        )
+
+    def test_material_condition_needs_every_material(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {"header": ['(Obtain "Red Key")'], "text": [""]}
+            ),
+            field_label_map = {"Obtain": "Получено"},
+            material_map = {"Blue Key": "Синий ключ"},
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["conditions"]['(Obtain "Red Key")'],
+            '(Obtain "Red Key")',
+        )
+
     def test_prefills_location_and_field_label_translations(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(DIALOGUE_ROWS),

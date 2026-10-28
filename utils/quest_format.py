@@ -77,6 +77,8 @@ COLOR_SPAN_RE = re.compile(
     r'(<span style="color: [^"]+;">.*?</span>)',
     re.DOTALL,
 )
+MATERIAL_CONDITION_RE = re.compile(r"^\((Obtain|Submit)\s+(.+)\)$")
+QUOTED_NAME_RE = re.compile(r'"([^"]+)"')
 
 # Languages where the feminine form is built from the masculine stem, so a
 # lone ``{F#...}`` suffix can be merged into the preceding word.
@@ -188,6 +190,7 @@ def classify_dialogue(
     location_map: dict[str, str] | None = None,
     field_label_map: dict[str, str] | None = None,
     location_keys: set[str] | None = None,
+    material_map: dict[str, str] | None = None,
     target_language: str | None = None,
     gender_mode: str | None = None,
     prompt_variables: bool = True,
@@ -195,15 +198,16 @@ def classify_dialogue(
 ) -> ClassificationResult:
     """Classify dialogue rows and collect the values that need user input.
 
-    ``speaker_map``, ``location_map`` and ``field_label_map`` map English keys
-    to localized values (usually taken from the file's ``Translation``
-    section). Matching values are prefilled in the prompt groups so the user
-    can still adjust them. ``location_keys`` contains every English location
-    key, which lets location headers without a comma be recognized even when
-    their target translation is missing. Gendered content is prefilled with the
-    value produced by ``gender_mode`` (the language's preferred mode by
-    default), so editors can still adjust it. Every other header is collected
-    into a prompt group as well.
+    ``speaker_map``, ``location_map``, ``field_label_map`` and ``material_map``
+    map English keys to localized values (usually taken from the file's
+    ``Translation`` section or the shared knowledge base). Matching values are
+    prefilled in the prompt groups so the user can still adjust them.
+    ``location_keys`` contains every English location key, which lets location
+    headers without a comma be recognized even when their target translation is
+    missing. Gendered content is prefilled with the value produced by
+    ``gender_mode`` (the language's preferred mode by default), so editors can
+    still adjust it. Every other header is collected into a prompt group as
+    well.
     """
 
     mode = gender_mode or gender_mode_for(target_language)
@@ -222,6 +226,11 @@ def classify_dialogue(
     normalized_field_label_map = {
         normalize_name(key): normalize_name(value)
         for key, value in (field_label_map or {}).items()
+        if normalize_name(key) and normalize_name(value)
+    }
+    normalized_material_map = {
+        normalize_name(key): normalize_name(value)
+        for key, value in (material_map or {}).items()
         if normalize_name(key) and normalize_name(value)
     }
     normalized_location_keys = {
@@ -335,9 +344,21 @@ def classify_dialogue(
         elif row_type == "sub_mission":
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header
+            localized_condition = _localize_material_condition(
+                normalized_header,
+                normalized_field_label_map,
+                normalized_material_map,
+            )
+
+            if localized_condition:
+                defaults["conditions"][normalized_header] = localized_condition
 
             if prompt_headers:
-                add_prompt("conditions", normalized_header, normalized_header)
+                add_prompt(
+                    "conditions",
+                    normalized_header,
+                    localized_condition or normalized_header,
+                )
         else:
             normalized_header = normalize_name(raw_header)
 
@@ -1076,6 +1097,37 @@ def _variable_context(source: str, start: int) -> str:
     return context
 
 
+def _localize_material_condition(
+    header: str,
+    field_label_map: dict[str, str],
+    material_map: dict[str, str],
+) -> str:
+    """Prefill ``(Obtain "X")`` / ``(Submit "X")`` headers from the glossary."""
+
+    match = MATERIAL_CONDITION_RE.match(header)
+
+    if match is None:
+        return ""
+
+    localized_verb = field_label_map.get(match.group(1))
+
+    if not localized_verb:
+        return ""
+
+    body = match.group(2)
+    names = QUOTED_NAME_RE.findall(body)
+
+    if not names or any(name not in material_map for name in names):
+        return ""
+
+    localized_body = QUOTED_NAME_RE.sub(
+        lambda quoted: '"%s"' % material_map[quoted.group(1)],
+        body,
+    )
+
+    return "(%s %s)" % (localized_verb, localized_body)
+
+
 def _localize_compound_location(
     header: str,
     location_map: dict[str, str],
@@ -1103,25 +1155,44 @@ def _localize_compound_location(
 def _localize_header_prefix(
     header: str, field_label_map: dict[str, str]
 ) -> str:
-    for separator in (":", "："):
-        if separator not in header:
+    """Replace the longest known English prefix with its translation.
+
+    The glossary can hold both ``Optional Dialogue`` and the more specific
+    ``Optional Dialogue: Talk to``, so the longest matching entry wins.
+    """
+
+    best_key = ""
+    best_value = ""
+
+    for key, localized in field_label_map.items():
+        if not key or not localized:
             continue
 
-        prefix, rest = header.split(separator, 1)
-        localized_prefix = field_label_map.get(normalize_name(prefix))
+        if header == key:
+            return localized
 
-        if not localized_prefix:
+        if not header.startswith(key):
             continue
 
-        localized_prefix = localized_prefix.rstrip(":：").strip()
-        rest = rest.strip()
+        if header[len(key)] not in ":： ":
+            continue
 
-        if rest:
-            return "%s%s %s" % (localized_prefix, separator, rest)
+        if len(key) > len(best_key):
+            best_key = key
+            best_value = localized
 
-        return "%s%s" % (localized_prefix, separator)
+    if not best_key:
+        return ""
 
-    return ""
+    remainder = header[len(best_key):]
+
+    if remainder[:1] in {":", "："}:
+        if best_value.endswith((":", "：")):
+            remainder = remainder[1:]
+        elif remainder[1:2] not in {" ", ""}:
+            remainder = remainder[0] + " " + remainder[1:]
+
+    return "%s%s" % (best_value, remainder)
 
 
 def _prepare_frame(dialogue_df: pd.DataFrame) -> pd.DataFrame:

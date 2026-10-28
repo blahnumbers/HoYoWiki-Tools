@@ -13,7 +13,7 @@ A collection of small applications to streamline the work of HoYoWiki collaborat
 ### Currently available modules
 
 * **PGC Creator:** Creates and fills in a PGC spreadsheet in batch from a template for it to be loaded and pushed into the WET.
-* **Quest Formatter:** Takes text data from a localization sheet made by the Quest Team and formats it so it is ready to be pasted directly into the WET. Supports pasting the text columns or importing the original `.xlsx` / `.csv` data file, including automatic localization of speaker names, locations and field labels from the file's `Translation` section or the shared [knowledge base spreadsheet](https://docs.google.com/spreadsheets/d/1OoUh_oioZ66JeVgzSbWagDL1bYEf3uVSyh_OHjxD7Xs).
+* **Quest Formatter:** Takes text data from a localization sheet made by the Quest Team and formats it so it is ready to be pasted directly into the WET. Supports pasting the text columns or importing the original `.xlsx` / `.csv` data file, including automatic localization of speaker names, locations, field labels, quest titles and materials from the file's `Translation` section or the shared [knowledge base spreadsheet](https://docs.google.com/spreadsheets/d/1OoUh_oioZ66JeVgzSbWagDL1bYEf3uVSyh_OHjxD7Xs).
 
 </details>
 
