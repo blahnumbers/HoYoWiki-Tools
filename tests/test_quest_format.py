@@ -601,8 +601,122 @@ class FormattingTests(unittest.TestCase):
     def test_markup_preset_follows_the_target_language(self) -> None:
         self.assertEqual(quest_format.markup_preset_for("RU"), "RU")
         self.assertEqual(quest_format.markup_preset_for("JP"), "RU")
+        self.assertEqual(quest_format.markup_preset_for("CHS"), "CHS")
         self.assertEqual(quest_format.markup_preset_for("EN"), "EN")
         self.assertEqual(quest_format.markup_preset_for("DE"), "EN")
+
+    def test_chinese_dialogue_uses_fullwidth_colon_and_bold_speaker(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["你好"]}),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(result.df, "CHS")
+
+        self.assertIn(
+            '<span style="color: rgb(255, 255, 255);">'
+            "<strong>Paimon：</strong></span><br>你好</p>",
+            output,
+        )
+
+    def test_chinese_objective_label_is_bold_and_text_is_plain(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Quest Objective", "Paimon"],
+                    "text": ["找到钥匙", "你好"],
+                }
+            ),
+            field_label_map = {"Quest Objective": "任务目标"},
+            target_language = "CHS",
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
+        output = quest_format.format_dialogue(
+            result.df,
+            "CHS",
+            target_language = "CHS",
+        )
+
+        self.assertIn(
+            '<p><span style="color: rgb(255, 255, 255);">'
+            "<strong>任务目标：</strong></span>找到钥匙</p>",
+            output,
+        )
+
+    def test_chinese_description_label_is_bold_and_text_is_plain(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Quest Description", "Paimon"],
+                    "text": ["一段描述", "你好"],
+                }
+            ),
+            field_label_map = {"Quest Description": "任务描述"},
+            target_language = "CHS",
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
+        output = quest_format.format_dialogue(
+            result.df,
+            "CHS",
+            target_language = "CHS",
+        )
+
+        self.assertIn(
+            '<p><span style="color: rgb(255, 255, 255);">'
+            "<strong>任务描述：</strong></span>一段描述</p>",
+            output,
+        )
+
+    def test_chinese_optional_header_uses_a_fullwidth_colon(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Optional Dialogue: Talk to Anastasya"],
+                    "text": [""],
+                }
+            ),
+            field_label_map = {"Optional Dialogue": "可选对话"},
+            target_language = "CHS",
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
+        output = quest_format.format_dialogue(
+            result.df,
+            "CHS",
+            target_language = "CHS",
+        )
+
+        self.assertIn("<p>可选对话：Talk to Anastasya</p>", output)
+
+    def test_chinese_talk_to_uses_the_name_slot(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Optional Dialogue: Talk to Anastasya"],
+                    "text": [""],
+                }
+            ),
+            field_label_map = {
+                "Optional Dialogue: Talk to": "可选对话：与\u3000对话",
+            },
+            speaker_map = {"Anastasya": "阿纳斯塔西娅"},
+            target_language = "CHS",
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["optional"]["Optional Dialogue: Talk to Anastasya"],
+            "可选对话：与阿纳斯塔西娅对话",
+        )
 
     def test_japanese_uses_the_russian_speaker_layout(self) -> None:
         result = quest_format.classify_dialogue(

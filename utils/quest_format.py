@@ -227,24 +227,24 @@ def classify_dialogue(
 
     df = _prepare_frame(dialogue_df)
     normalized_speaker_map = {
-        normalize_name(key): normalize_name(value)
+        normalize_name(key): str(value).strip()
         for key, value in (speaker_map or {}).items()
-        if normalize_name(key) and normalize_name(value)
+        if normalize_name(key) and str(value).strip()
     }
     normalized_location_map = {
-        normalize_name(key): normalize_name(value)
+        normalize_name(key): str(value).strip()
         for key, value in (location_map or {}).items()
-        if normalize_name(key) and normalize_name(value)
+        if normalize_name(key) and str(value).strip()
     }
     normalized_field_label_map = {
-        normalize_name(key): normalize_name(value)
+        normalize_name(key): str(value).strip()
         for key, value in (field_label_map or {}).items()
-        if normalize_name(key) and normalize_name(value)
+        if normalize_name(key) and str(value).strip()
     }
     normalized_material_map = {
-        normalize_name(key): normalize_name(value)
+        normalize_name(key): str(value).strip()
         for key, value in (material_map or {}).items()
-        if normalize_name(key) and normalize_name(value)
+        if normalize_name(key) and str(value).strip()
     }
     normalized_location_keys = {
         normalize_name(key) for key in (location_keys or set()) if normalize_name(key)
@@ -529,6 +529,9 @@ def format_objective(
 def markup_preset_for(language: str | None) -> str:
     """Return the dialogue markup preset used for a target language."""
 
+    if language == "CHS":
+        return "CHS"
+
     return "RU" if language in {"RU", "JP"} else "EN"
 
 
@@ -539,7 +542,12 @@ def format_dialogue(
     gender_mode: str | None = None,
     collapse_speakers: bool = False,
 ) -> str:
-    language_preset = "RU" if preset in {"RU", "JP"} else "EN"
+    if preset == "CHS":
+        language_preset = "CHS"
+    elif preset in {"RU", "JP"}:
+        language_preset = "RU"
+    else:
+        language_preset = "EN"
 
     html_data = ""
     opened_tags: list[str] = []
@@ -628,6 +636,22 @@ def format_dialogue(
                             </tbody>
                         </table>
                         """ % (description_header, text)
+                    case "CHS":
+                        description_header = _wrap_with_base_color(
+                            "<strong>%s：</strong>" % header,
+                            "rgb(255, 255, 255)",
+                        )
+                        html_data += """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p>%s%s</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        """ % (description_header, text)
             case "objective":
                 match language_preset:
                     case "EN":
@@ -658,16 +682,37 @@ def format_dialogue(
                             </tbody>
                         </table>
                         """ % objective_content
+                    case "CHS":
+                        objective_header = _wrap_with_base_color(
+                            "<strong>%s：</strong>" % header,
+                            "rgb(255, 255, 255)",
+                        )
+                        html_data += """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p>%s%s</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        """ % (objective_header, text)
             case "missing":
                 continue
             case "addopt":
+                optional_header = header
+
+                if language_preset == "CHS":
+                    optional_header = _use_fullwidth_colon(optional_header)
+
                 html_data += """
                 <p>%s</p>
                 <table>
                     <tbody>
                         <tr>
                             <td colspan="1" rowspan="1">
-                """ % header
+                """ % optional_header
 
                 opened_tags.append("addopt")
             case "choice_flag":
@@ -711,6 +756,18 @@ def format_dialogue(
                                     <td colspan="1" rowspan="1">
                                         <p>%s</p>
                         """ % choice_content
+                    case "CHS":
+                        choice_content = _wrap_with_base_color(
+                            "<strong>%s：</strong>%s" % (header, text),
+                            "rgb(255, 255, 255)",
+                        )
+                        html_data += """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p>%s</p>
+                        """ % choice_content
 
                 opened_tags.append("choice_branch")
             case "location":
@@ -724,6 +781,14 @@ def format_dialogue(
                         <p>%s</p>
                         """ % location_content
                     case "RU":
+                        location_content = _wrap_with_base_color(
+                            "<strong>%s</strong>" % header,
+                            "rgb(255, 255, 255)",
+                        )
+                        html_data += """
+                        <p>%s</p>
+                        """ % location_content
+                    case "CHS":
                         location_content = _wrap_with_base_color(
                             "<strong>%s</strong>" % header,
                             "rgb(255, 255, 255)",
@@ -757,6 +822,15 @@ def format_dialogue(
                         case "RU":
                             dialogue_header = _wrap_with_base_color(
                                 "<strong>%s: </strong>" % header,
+                                "rgb(255, 255, 255)",
+                            )
+                            html_data += """<p>%s<br>%s</p>""" % (
+                                dialogue_header,
+                                text,
+                            )
+                        case "CHS":
+                            dialogue_header = _wrap_with_base_color(
+                                "<strong>%s：</strong>" % header,
                                 "rgb(255, 255, 255)",
                             )
                             html_data += """<p>%s<br>%s</p>""" % (
@@ -1245,6 +1319,12 @@ def _localize_compound_location(
     return ", ".join(localized_parts)
 
 
+def _use_fullwidth_colon(text: str) -> str:
+    """Replace the first colon and its trailing spaces with a full-width colon."""
+
+    return re.sub(r"[:：]\s*", "：", text, count=1)
+
+
 def _localize_talk_to_header(
     header: str,
     field_label_map: dict[str, str],
@@ -1272,17 +1352,14 @@ def _localize_talk_to_header(
         # is left for the editor to adjust.
         return "%s %s" % (template, name)
 
-    if language == "JP":
-        if "{name}" in template:
-            localized = template.replace("{name}", localized_name)
-        elif "\u3000" in template:
-            # The Japanese template uses an ideographic space as the name slot.
-            localized = template.replace("\u3000", localized_name, 1)
-        elif " " in template:
-            head, tail = template.rsplit(" ", 1)
-            localized = "%s%s%s" % (head, localized_name, tail)
-        else:
-            localized = "%s%s" % (template, localized_name)
+    if "{name}" in template:
+        localized = template.replace("{name}", localized_name)
+    elif "\u3000" in template:
+        # Templates can use an ideographic space as the name slot.
+        localized = template.replace("\u3000", localized_name, 1)
+    elif language == "JP" and " " in template:
+        head, tail = template.rsplit(" ", 1)
+        localized = "%s%s%s" % (head, localized_name, tail)
     else:
         localized = "%s %s" % (template, localized_name)
 
