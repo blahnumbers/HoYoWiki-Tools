@@ -153,6 +153,7 @@ class ClassificationResult:
     variable_contexts: dict[str, str] = field(default_factory=dict)
     variable_suffix_contexts: dict[str, str] = field(default_factory=dict)
     has_gendered_content: bool = False
+    traveler_name: str = ""
 
     @property
     def has_prompts(self) -> bool:
@@ -264,7 +265,11 @@ def classify_dialogue(
     if not normalized_location_keys:
         normalized_location_keys = set(normalized_location_map)
 
-    traveler_name = normalized_speaker_map.get(normalize_name("Traveler"), "")
+    localized_traveler_name = normalized_speaker_map.get(
+        normalize_name("Traveler"),
+        "",
+    )
+    traveler_name = localized_traveler_name
 
     if target_language == "JP":
         traveler_name = "(プレイヤー名)"
@@ -450,6 +455,7 @@ def classify_dialogue(
         variable_contexts=variable_contexts,
         variable_suffix_contexts=variable_suffix_contexts,
         has_gendered_content=has_gendered_content,
+        traveler_name=localized_traveler_name,
     )
 
 
@@ -557,6 +563,7 @@ def format_dialogue(
     gender_mode: str | None = None,
     collapse_speakers: bool = False,
     show_gendered_note: bool = False,
+    traveler_name: str | None = None,
 ) -> str:
     if preset == "CHS":
         language_preset = "CHS"
@@ -952,6 +959,25 @@ def format_dialogue(
             case "dialogue":
                 if last_row_type == "objective" and not is_korean:
                     html_data += "<p></p>"
+
+                is_traveler_speaker = is_japanese and (
+                    "Traveler" in header
+                    or (traveler_name and traveler_name in header)
+                )
+
+                if is_traveler_speaker and not opened_tags:
+                    html_data += """
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td colspan="1" rowspan="1">
+                                    <p><span style="color: rgb(255, 255, 255);"><strong>%s: </strong>%s</span></p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    """ % (header, text)
+                    continue
 
                 if (
                     is_japanese

@@ -1290,6 +1290,38 @@ class FormattingTests(unittest.TestCase):
 
         self.assertNotIn("<p></p>", table)
 
+    def test_japanese_traveler_dialogue_uses_its_own_box(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon", "旅人", "旅人"],
+                    "text": ["Question?", "Line one", "Line two"],
+                }
+            ),
+            target_language = "JP",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "JP",
+            traveler_name = "旅人",
+        )
+
+        self.assertEqual(output.count("<table>"), 2)
+        self.assertIn(
+            '<p><span style="color: rgb(255, 255, 255);">'
+            "<strong>旅人: </strong>Line one</span></p>",
+            output,
+        )
+        self.assertIn(
+            '<p><span style="color: rgb(255, 255, 255);">'
+            "<strong>旅人: </strong>Line two</span></p>",
+            output,
+        )
+
     def test_japanese_choice_branches_share_one_table(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
