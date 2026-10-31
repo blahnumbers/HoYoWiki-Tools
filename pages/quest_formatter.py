@@ -295,6 +295,7 @@ def _handle_dialogue(
                 target,
                 gender_mode,
                 collapse_speakers,
+                result.has_gendered_content,
             )
         )
 
@@ -425,6 +426,7 @@ def translation_dialog() -> None:
                     target,
                     gender_mode,
                     collapse_speakers,
+                    result.has_gendered_content,
                 )
             )
             st.session_state[PENDING_KEY] = None

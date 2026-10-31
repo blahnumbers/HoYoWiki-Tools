@@ -147,6 +147,7 @@ class ClassificationResult:
     defaults: dict[str, dict[str, str]] = field(default_factory=dict)
     variable_contexts: dict[str, str] = field(default_factory=dict)
     variable_suffix_contexts: dict[str, str] = field(default_factory=dict)
+    has_gendered_content: bool = False
 
     @property
     def has_prompts(self) -> bool:
@@ -226,6 +227,11 @@ def classify_dialogue(
     mode = gender_mode or gender_mode_for(target_language)
 
     df = _prepare_frame(dialogue_df)
+    has_gendered_content = any(
+        "{M#" in str(value) or "{F#" in str(value)
+        for column in ("header", "text")
+        for value in df[column]
+    )
     normalized_speaker_map = {
         normalize_name(key): str(value).strip()
         for key, value in (speaker_map or {}).items()
@@ -438,6 +444,7 @@ def classify_dialogue(
         defaults=defaults,
         variable_contexts=variable_contexts,
         variable_suffix_contexts=variable_suffix_contexts,
+        has_gendered_content=has_gendered_content,
     )
 
 
@@ -541,6 +548,7 @@ def format_dialogue(
     target_language: str | None = None,
     gender_mode: str | None = None,
     collapse_speakers: bool = False,
+    show_gendered_note: bool = False,
 ) -> str:
     if preset == "CHS":
         language_preset = "CHS"
@@ -549,8 +557,19 @@ def format_dialogue(
     else:
         language_preset = "EN"
 
+    is_japanese = target_language == "JP"
+
     html_data = ""
     opened_tags: list[str] = []
+
+    if is_japanese and show_gendered_note:
+        html_data += (
+            "<p>※主人公に空、蛍どちらを選んだかによって会話に差異が生じる。"
+            "空を選んだ場合は♂、蛍を選んだ場合は♀として、以下のように記載。<br>"
+            "例: (♂俺 ♀私)には見えて、ティレルには見えない魔物もいる"
+            "(♂みたいだ ♀みたい)…</p>"
+            "<p></p>"
+        )
 
     for row_index, row in classified_dialogue_df.iterrows():
         last_row_type = (
@@ -718,50 +737,55 @@ def format_dialogue(
             case "choice_flag":
                 continue
             case "choice_branch":
-                if last_row_type != "choice_flag" and "choice_branch" in opened_tags:
-                    opened_tags.reverse()
-
-                    html_data += """
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    """
-
-                    opened_tags.remove("choice_branch")
-                    opened_tags.reverse()
-
                 match language_preset:
-                    case "EN":
-                        choice_content = _wrap_with_base_color(
-                            "%s: %s" % (header, text),
-                            "rgb(255, 255, 255)",
-                        )
-                        html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p>%s</p>
-                        """ % choice_content
-                    case "RU":
-                        choice_content = _wrap_with_base_color(
-                            "<strong>%s: </strong>%s" % (header, text),
-                            "rgb(255, 255, 255)",
-                        )
-                        html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p>%s</p>
-                        """ % choice_content
                     case "CHS":
                         choice_content = _wrap_with_base_color(
                             "<strong>%s：</strong>%s" % (header, text),
                             "rgb(255, 255, 255)",
                         )
+                    case "EN":
+                        choice_content = _wrap_with_base_color(
+                            "%s: %s" % (header, text),
+                            "rgb(255, 255, 255)",
+                        )
+                    case _:
+                        choice_content = _wrap_with_base_color(
+                            "<strong>%s: </strong>%s" % (header, text),
+                            "rgb(255, 255, 255)",
+                        )
+
+                if (
+                    is_japanese
+                    and opened_tags
+                    and opened_tags[-1] == "choice_branch"
+                    and last_row_type == "choice_branch"
+                ):
+                    # Add another option row to the open choice group.
+                    html_data += """
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p>%s</p>
+                    """ % choice_content
+                else:
+                    if (
+                        last_row_type != "choice_flag"
+                        and "choice_branch" in opened_tags
+                    ):
+                        opened_tags.reverse()
+
                         html_data += """
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        """
+
+                        opened_tags.remove("choice_branch")
+                        opened_tags.reverse()
+
+                    html_data += """
                         <table>
                             <tbody>
                                 <tr>
@@ -769,7 +793,7 @@ def format_dialogue(
                                         <p>%s</p>
                         """ % choice_content
 
-                opened_tags.append("choice_branch")
+                    opened_tags.append("choice_branch")
             case "location":
                 match language_preset:
                     case "EN":
@@ -798,6 +822,16 @@ def format_dialogue(
                         """ % location_content
             case "dialogue":
                 if last_row_type == "objective":
+                    html_data += "<p></p>"
+
+                if (
+                    is_japanese
+                    and opened_tags
+                    and opened_tags[-1] in {"choice_branch", "addopt", "action"}
+                    and last_row_type
+                    in {"dialogue", "choice_branch", "addopt", "action"}
+                    and previous_header != header
+                ):
                     html_data += "<p></p>"
 
                 if (

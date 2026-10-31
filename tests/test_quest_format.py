@@ -1079,6 +1079,82 @@ class FormattingTests(unittest.TestCase):
 
         self.assertIn("Der Berater/Die Beraterin", output)
 
+    def test_japanese_choice_branches_share_one_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Choice", "1. Traveler", "2. Traveler", "Paimon"],
+                    "text": ["", "First option", "Second option", "Response"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "JP",
+        )
+
+        self.assertEqual(output.count("<table>"), 1)
+
+        table_start = output.index("<table>")
+        table_end = output.index("</table>") + len("</table>")
+        choice_table = output[table_start:table_end]
+
+        self.assertEqual(choice_table.count("<tr>"), 2)
+        self.assertIn("First option", choice_table)
+        self.assertIn("Second option", choice_table)
+        self.assertIn("Response", choice_table)
+
+    def test_japanese_choice_response_gets_a_line_break(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Choice", "1. Traveler", "Paimon"],
+                    "text": ["", "First option", "Response"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "JP",
+        )
+
+        self.assertIn("<p></p><p><span", output)
+
+    def test_japanese_gendered_note_is_prepended(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["{M#俺}{F#私}だ"]}),
+            target_language = "JP",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        self.assertTrue(result.has_gendered_content)
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "JP",
+            show_gendered_note = True,
+        )
+
+        self.assertTrue(output.startswith("<p>※主人公に空、蛍"))
+
+        without_note = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "JP",
+        )
+
+        self.assertNotIn("※主人公に空、蛍", without_note)
+
     def test_japanese_gender_pairs_use_symbols(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame({"header": ["Paimon"], "text": ["{M#俺}{F#私}たち"]}),
