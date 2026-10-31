@@ -111,7 +111,7 @@ GENDER_MODES = (
 DEFAULT_GENDER_MODE = GENDER_MODE_MALE_FIRST
 
 # Korean quest formatting palette.
-KR_BASE_COLOR = "rgba(255, 255, 255, 0.5)"
+KR_BASE_COLOR = "rgba(255, 255, 255, 0.45)"
 KR_WHITE = "rgb(255, 255, 255)"
 KR_YELLOW = "rgba(255, 214, 128, 1)"
 
@@ -365,7 +365,17 @@ def classify_dialogue(
         elif row_type == "location":
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header
-            localized_location = normalized_location_map.get(normalized_header)
+            localized_location = ""
+
+            if target_language == "JP" and "," in normalized_header:
+                localized_location = _localize_compound_location(
+                    normalized_header,
+                    normalized_location_map,
+                    target_language,
+                )
+
+            if not localized_location:
+                localized_location = normalized_location_map.get(normalized_header)
 
             if not localized_location:
                 localized_location = _localize_compound_location(
@@ -822,7 +832,7 @@ def format_dialogue(
                                 KR_YELLOW,
                                 header,
                                 KR_BASE_COLOR,
-                                KR_WHITE,
+                                KR_BASE_COLOR,
                                 text,
                             )
                         )
@@ -966,13 +976,12 @@ def format_dialogue(
 
                             if inside_addopt:
                                 speaker_color = KR_YELLOW
-                                text_color = KR_WHITE
                             elif is_traveler:
                                 speaker_color = KR_BASE_COLOR
-                                text_color = KR_BASE_COLOR
                             else:
                                 speaker_color = KR_WHITE
-                                text_color = KR_WHITE
+
+                            text_color = KR_BASE_COLOR
 
                             dialogue_header = (
                                 '<span style="color: %s;">%s</span>'
@@ -1472,8 +1481,10 @@ def _localize_compound_location(
         localized_parts.append(localized)
 
     if language == "JP":
-        # Japanese location names put the broader area first.
+        # Japanese location names put the broader area first and are separated
+        # by a space rather than a comma.
         localized_parts.reverse()
+        return " ".join(localized_parts)
 
     return ", ".join(localized_parts)
 

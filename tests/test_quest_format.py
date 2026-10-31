@@ -1174,8 +1174,8 @@ class FormattingTests(unittest.TestCase):
 
         self.assertIn(
             '<span style="color: rgba(255, 214, 128, 1);">Traveler</span>'
-            '<span style="color: rgba(255, 255, 255, 0.5);">:</span> '
-            '<span style="color: rgb(255, 255, 255);">Option</span>',
+            '<span style="color: rgba(255, 255, 255, 0.45);">:</span> '
+            '<span style="color: rgba(255, 255, 255, 0.45);">Option</span>',
             output,
         )
 
@@ -1226,9 +1226,9 @@ class FormattingTests(unittest.TestCase):
         )
 
         self.assertIn(
-            '<span style="color: rgba(255, 255, 255, 0.5);">여행자</span>'
-            '<span style="color: rgba(255, 255, 255, 0.5);">:</span> '
-            '<span style="color: rgba(255, 255, 255, 0.5);">Hello</span>',
+            '<span style="color: rgba(255, 255, 255, 0.45);">여행자</span>'
+            '<span style="color: rgba(255, 255, 255, 0.45);">:</span> '
+            '<span style="color: rgba(255, 255, 255, 0.45);">Hello</span>',
             output,
         )
 
@@ -1362,7 +1362,7 @@ class FormattingTests(unittest.TestCase):
 
         self.assertEqual(
             result.defaults["locations"]["Zapolyarny Palace, Snezhnaya"],
-            "スネージナヤ, ザポリャールヌイ宮殿",
+            "スネージナヤ ザポリャールヌイ宮殿",
         )
 
     def test_prefix_token_collects_the_following_word_as_context(self) -> None:
