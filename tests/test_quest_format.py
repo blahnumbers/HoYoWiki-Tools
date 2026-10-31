@@ -1439,6 +1439,42 @@ class FormattingTests(unittest.TestCase):
             "Optionaler Dialog: Sprich mit Anastasia again",
         )
 
+    def test_korean_talk_to_puts_the_name_before_the_particle(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {"header": ["Optional Dialogue: Talk to Anastasya"], "text": [""]}
+            ),
+            field_label_map = {
+                "Optional Dialogue: Talk to": "선택: 와/과 대화하기",
+            },
+            speaker_map = {"Anastasya": "아나스타샤"},
+            target_language = "KR",
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["optional"]["Optional Dialogue: Talk to Anastasya"],
+            "선택: 아나스타샤와/과 대화하기",
+        )
+
+    def test_chinese_talk_to_uses_a_space_slot(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {"header": ["Optional Dialogue: Talk to Anastasya"], "text": [""]}
+            ),
+            field_label_map = {
+                "Optional Dialogue: Talk to": "可选对话：与 对话",
+            },
+            speaker_map = {"Anastasya": "安娜丝塔夏"},
+            target_language = "CHS",
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["optional"]["Optional Dialogue: Talk to Anastasya"],
+            "可选对话：与安娜丝塔夏对话",
+        )
+
     def test_talk_to_header_keeps_the_source_name_for_russian(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(

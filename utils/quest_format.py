@@ -1508,6 +1508,22 @@ def _localize_talk_to_header(
     elif language == "JP" and " " in template:
         head, tail = template.rsplit(" ", 1)
         localized = "%s%s%s" % (head, localized_name, tail)
+    elif language == "KR":
+        # Korean puts the name before the 와/과 particle.
+        for particle in ("와/과", "과/와"):
+            index = template.find(particle)
+
+            if index > 0:
+                localized = (
+                    template[:index] + localized_name + template[index:]
+                )
+                break
+        else:
+            localized = "%s %s" % (template, localized_name)
+    elif language == "CHS" and " " in template:
+        # Chinese templates mark the name slot with a space.
+        index = template.find(" ")
+        localized = template[:index] + localized_name + template[index + 1:]
     else:
         localized = "%s %s" % (template, localized_name)
 
