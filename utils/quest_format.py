@@ -749,8 +749,8 @@ def format_dialogue(
                         </table>
                         """ % objective_content
                     case "CHS":
-                        objective_header = _wrap_with_base_color(
-                            "<strong>%s：</strong>" % header,
+                        objective_content = _wrap_with_base_color(
+                            "<strong>%s：</strong>%s" % (header, text),
                             "rgb(255, 255, 255)",
                         )
                         html_data += """
@@ -758,12 +758,12 @@ def format_dialogue(
                             <tbody>
                                 <tr>
                                     <td colspan="1" rowspan="1">
-                                        <p>%s%s</p>
+                                        <p>%s</p>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
-                        """ % (objective_header, text)
+                        """ % objective_content
                     case "KR":
                         if not kr_meta_table_open:
                             html_data += """

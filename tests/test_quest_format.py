@@ -621,7 +621,7 @@ class FormattingTests(unittest.TestCase):
             output,
         )
 
-    def test_chinese_objective_label_is_bold_and_text_is_plain(self) -> None:
+    def test_chinese_objective_label_and_text_are_white(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -644,7 +644,7 @@ class FormattingTests(unittest.TestCase):
 
         self.assertIn(
             '<p><span style="color: rgb(255, 255, 255);">'
-            "<strong>任务目标：</strong></span>找到钥匙</p>",
+            "<strong>任务目标：</strong>找到钥匙</span></p>",
             output,
         )
 
