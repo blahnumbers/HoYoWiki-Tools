@@ -570,6 +570,7 @@ def format_dialogue(
     is_japanese = target_language == "JP"
     is_korean = target_language == "KR"
     kr_meta_table_open = False
+    jp_choice_open = False
 
     html_data = ""
     opened_tags: list[str] = []
@@ -640,6 +641,37 @@ def format_dialogue(
                             </table>
                             """
             kr_meta_table_open = False
+
+        if (
+            is_japanese
+            and jp_choice_open
+            and (
+                row["type"]
+                in {
+                    "choice_flag",
+                    "location",
+                    "objective",
+                    "description",
+                    "addopt",
+                    "sub_mission",
+                }
+                or (
+                    row["type"] == "blank"
+                    and next_content_type != "choice_branch"
+                )
+            )
+        ):
+            html_data += """
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            """
+
+            if "choice_branch" in opened_tags:
+                opened_tags.remove("choice_branch")
+
+            jp_choice_open = False
 
         text = prepare_text(str(row["text"]), target_language, gender_mode)
         header = _replace_color_tags(str(row["header"]))
@@ -849,12 +881,7 @@ def format_dialogue(
                             "rgb(255, 255, 255)",
                         )
 
-                if (
-                    is_japanese
-                    and opened_tags
-                    and opened_tags[-1] == "choice_branch"
-                    and last_row_type == "choice_branch"
-                ):
+                if is_japanese and jp_choice_open:
                     # Add another option row to the open choice group.
                     html_data += """
                                     </td>
@@ -889,6 +916,9 @@ def format_dialogue(
                         """ % choice_content
 
                     opened_tags.append("choice_branch")
+
+                    if is_japanese:
+                        jp_choice_open = True
             case "location":
                 match language_preset:
                     case "EN":
@@ -927,8 +957,7 @@ def format_dialogue(
                     is_japanese
                     and opened_tags
                     and opened_tags[-1] in {"choice_branch", "addopt", "action"}
-                    and last_row_type
-                    in {"dialogue", "choice_branch", "addopt", "action"}
+                    and last_row_type in {"dialogue", "choice_branch", "action"}
                     and previous_header != header
                 ):
                     html_data += "<p></p>"
@@ -1065,6 +1094,13 @@ def format_dialogue(
 
                     opened_tags.pop()
             case "blank":
+                if (
+                    is_japanese
+                    and jp_choice_open
+                    and next_content_type == "choice_branch"
+                ):
+                    continue
+
                 if opened_tags and next_row_type != "choice_flag":
                     match opened_tags[-1]:
                         case "addopt" | "choice_branch" | "action":

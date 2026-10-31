@@ -1231,6 +1231,65 @@ class FormattingTests(unittest.TestCase):
             output,
         )
 
+    def test_japanese_choice_options_group_across_blank_rows(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Choice",
+                        "1. Traveler",
+                        "",
+                        "2. Traveler",
+                        "",
+                        "3. Traveler",
+                    ],
+                    "text": ["", "One", "", "Two", "", "Three"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "JP",
+        )
+
+        self.assertEqual(output.count("<table>"), 1)
+
+        table_start = output.index("<table>")
+        table_end = output.index("</table>") + len("</table>")
+        choice_table = output[table_start:table_end]
+
+        self.assertEqual(choice_table.count("<tr>"), 3)
+        for line in ("One", "Two", "Three"):
+            self.assertIn(line, choice_table)
+
+    def test_japanese_optional_dialogue_has_no_leading_blank(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Optional Dialogue: Talk to Anastasya", "Anastasya"],
+                    "text": ["", "Hello"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "JP",
+        )
+
+        table_start = output.index("<table>")
+        table_end = output.index("</table>") + len("</table>")
+        table = output[table_start:table_end]
+
+        self.assertNotIn("<p></p>", table)
+
     def test_japanese_choice_branches_share_one_table(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
