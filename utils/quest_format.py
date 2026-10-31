@@ -365,17 +365,7 @@ def classify_dialogue(
         elif row_type == "location":
             normalized_header = normalize_name(raw_header)
             df.at[row_index, "header"] = normalized_header
-            localized_location = ""
-
-            if target_language == "JP" and "," in normalized_header:
-                localized_location = _localize_compound_location(
-                    normalized_header,
-                    normalized_location_map,
-                    target_language,
-                )
-
-            if not localized_location:
-                localized_location = normalized_location_map.get(normalized_header)
+            localized_location = normalized_location_map.get(normalized_header)
 
             if not localized_location:
                 localized_location = _localize_compound_location(
