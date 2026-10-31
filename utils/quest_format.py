@@ -625,7 +625,13 @@ def format_dialogue(
         if (
             is_korean
             and kr_meta_table_open
-            and row["type"] not in {"description", "objective", "blank"}
+            and (
+                row["type"] not in {"description", "objective", "blank"}
+                or (
+                    row["type"] == "blank"
+                    and next_content_type not in {"description", "objective"}
+                )
+            )
         ):
             html_data += """
                                         </td>
@@ -798,6 +804,19 @@ def format_dialogue(
 
                 opened_tags.append("addopt")
             case "choice_flag":
+                if "choice_branch" in opened_tags:
+                    opened_tags.reverse()
+
+                    html_data += """
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    """
+
+                    opened_tags.remove("choice_branch")
+                    opened_tags.reverse()
+
                 continue
             case "choice_branch":
                 match language_preset:
@@ -952,9 +971,12 @@ def format_dialogue(
                                 text,
                             )
                         case "KR":
-                            inside_addopt = "addopt" in opened_tags
+                            inside_box = bool(
+                                opened_tags
+                                and opened_tags[-1] in {"addopt", "choice_branch"}
+                            )
 
-                            if inside_addopt:
+                            if inside_box:
                                 speaker_color = KR_YELLOW
                             else:
                                 speaker_color = KR_WHITE
@@ -1003,10 +1025,16 @@ def format_dialogue(
                 )
 
                 if is_korean:
+                    if last_row_type not in {"blank", "action"}:
+                        html_data += "<p></p>"
+
                     html_data += (
                         '<p><span style="color: %s;"><strong>%s</strong></span></p>'
                         % (KR_WHITE, text)
                     )
+
+                    if next_row_type not in {"blank", "action"}:
+                        html_data += "<p></p>"
                 elif opened_tags and opened_tags[-1] != "action":
                     # Already inside an optional/choice table; keep the
                     # phrase in that table instead of nesting another one.
@@ -1049,7 +1077,15 @@ def format_dialogue(
 
                             opened_tags.pop()
 
-                if next_row_type != "choice_branch" and not is_korean:
+                add_spacing = next_row_type != "choice_branch"
+
+                if is_korean and (
+                    next_content_type in {"choice_branch", "choice_flag"}
+                    or kr_meta_table_open
+                ):
+                    add_spacing = False
+
+                if add_spacing:
                     html_data += "<p></p>"
 
     if kr_meta_table_open:

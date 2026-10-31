@@ -1128,9 +1128,9 @@ class FormattingTests(unittest.TestCase):
         self.assertIn("Desc", meta_table)
         self.assertIn("Obj", meta_table)
 
-        # The dialogue follows the table without an extra empty paragraph.
+        # A blank line separates the meta table from the dialogue.
         self.assertIn("</table>", output)
-        self.assertNotIn("</table>\n                            <p></p>", output)
+        self.assertIn("</table>\n                            <p></p>", output)
 
     def test_korean_action_text_is_bold_without_a_table(self) -> None:
         result = quest_format.classify_dialogue(
