@@ -602,6 +602,7 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(quest_format.markup_preset_for("RU"), "RU")
         self.assertEqual(quest_format.markup_preset_for("JP"), "RU")
         self.assertEqual(quest_format.markup_preset_for("CHS"), "CHS")
+        self.assertEqual(quest_format.markup_preset_for("KR"), "KR")
         self.assertEqual(quest_format.markup_preset_for("EN"), "EN")
         self.assertEqual(quest_format.markup_preset_for("DE"), "EN")
 
@@ -1078,6 +1079,158 @@ class FormattingTests(unittest.TestCase):
         )
 
         self.assertIn("Der Berater/Die Beraterin", output)
+
+    def test_korean_location_is_not_bold(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Snezhnaya"], "text": [""]}),
+            location_keys = {"Snezhnaya"},
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "KR",
+            target_language = "KR",
+        )
+
+        self.assertIn(
+            '<p><span style="color: rgb(236, 229, 216);">Snezhnaya</span></p>',
+            output,
+        )
+        self.assertNotIn("<strong>Snezhnaya</strong>", output)
+
+    def test_korean_description_and_objective_share_one_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Quest Description", "Quest Objective", "", "Paimon"],
+                    "text": ["Desc", "Obj", "", "Hello"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
+        output = quest_format.format_dialogue(
+            result.df,
+            "KR",
+            target_language = "KR",
+        )
+
+        self.assertEqual(output.count("<table>"), 1)
+
+        table_start = output.index("<table>")
+        table_end = output.index("</table>") + len("</table>")
+        meta_table = output[table_start:table_end]
+
+        self.assertIn("Desc", meta_table)
+        self.assertIn("Obj", meta_table)
+
+        # The dialogue follows the table without an extra empty paragraph.
+        self.assertIn("</table>", output)
+        self.assertNotIn("</table>\n                            <p></p>", output)
+
+    def test_korean_action_text_is_bold_without_a_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon", "", "Paimon"],
+                    "text": ["Hello", "A description", "Bye"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "KR",
+            target_language = "KR",
+        )
+
+        self.assertIn(
+            '<p><strong style="color: rgb(255, 255, 255);">'
+            "A description</strong></p>",
+            output,
+        )
+        self.assertNotIn("<table>", output)
+
+    def test_korean_choice_speaker_is_yellow(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {"header": ["Choice", "1. Traveler"], "text": ["", "Option"]}
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "KR",
+            target_language = "KR",
+        )
+
+        self.assertIn(
+            '<span style="color: rgba(255, 214, 128, 1);">Traveler</span>'
+            '<span style="color: rgba(255, 255, 255, 0.5);">:</span> '
+            '<span style="color: rgb(255, 255, 255);">Option</span>',
+            output,
+        )
+
+    def test_korean_optional_header_is_inside_the_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Optional Dialogue: Talk to Anastasya", "Anastasya"],
+                    "text": ["", "Hello"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "KR",
+            target_language = "KR",
+        )
+
+        table_start = output.index("<table>")
+        table_end = output.index("</table>") + len("</table>")
+        table = output[table_start:table_end]
+
+        self.assertIn(
+            '<strong style="color: rgba(255, 214, 128, 1);">'
+            "Optional Dialogue: Talk to Anastasya</strong>",
+            table,
+        )
+        self.assertIn(
+            '<span style="color: rgba(255, 214, 128, 1);">Anastasya</span>',
+            table,
+        )
+
+    def test_korean_traveler_speaker_is_half_transparent(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["여행자"], "text": ["Hello"]}),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "KR",
+            target_language = "KR",
+            traveler_name = "여행자",
+        )
+
+        self.assertIn(
+            '<span style="color: rgba(255, 255, 255, 0.5);">여행자</span>'
+            '<span style="color: rgba(255, 255, 255, 0.5);">:</span> '
+            '<span style="color: rgba(255, 255, 255, 0.5);">Hello</span>',
+            output,
+        )
 
     def test_japanese_choice_branches_share_one_table(self) -> None:
         result = quest_format.classify_dialogue(

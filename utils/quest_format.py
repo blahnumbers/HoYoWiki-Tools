@@ -110,6 +110,11 @@ GENDER_MODES = (
 
 DEFAULT_GENDER_MODE = GENDER_MODE_MALE_FIRST
 
+# Korean quest formatting palette.
+KR_BASE_COLOR = "rgba(255, 255, 255, 0.5)"
+KR_WHITE = "rgb(255, 255, 255)"
+KR_YELLOW = "rgba(255, 214, 128, 1)"
+
 # Languages where consecutive lines from the same speaker are merged by default.
 COLLAPSE_SPEAKER_LANGUAGES = frozenset({"RU", "JP"})
 
@@ -148,6 +153,7 @@ class ClassificationResult:
     variable_contexts: dict[str, str] = field(default_factory=dict)
     variable_suffix_contexts: dict[str, str] = field(default_factory=dict)
     has_gendered_content: bool = False
+    traveler_name: str = ""
 
     @property
     def has_prompts(self) -> bool:
@@ -259,7 +265,11 @@ def classify_dialogue(
     if not normalized_location_keys:
         normalized_location_keys = set(normalized_location_map)
 
-    traveler_name = normalized_speaker_map.get(normalize_name("Traveler"), "")
+    localized_traveler_name = normalized_speaker_map.get(
+        normalize_name("Traveler"),
+        "",
+    )
+    traveler_name = localized_traveler_name
 
     if target_language == "JP":
         traveler_name = "(プレイヤー名)"
@@ -445,6 +455,7 @@ def classify_dialogue(
         variable_contexts=variable_contexts,
         variable_suffix_contexts=variable_suffix_contexts,
         has_gendered_content=has_gendered_content,
+        traveler_name=localized_traveler_name,
     )
 
 
@@ -539,6 +550,9 @@ def markup_preset_for(language: str | None) -> str:
     if language == "CHS":
         return "CHS"
 
+    if language == "KR":
+        return "KR"
+
     return "RU" if language in {"RU", "JP"} else "EN"
 
 
@@ -549,15 +563,20 @@ def format_dialogue(
     gender_mode: str | None = None,
     collapse_speakers: bool = False,
     show_gendered_note: bool = False,
+    traveler_name: str | None = None,
 ) -> str:
     if preset == "CHS":
         language_preset = "CHS"
+    elif preset == "KR":
+        language_preset = "KR"
     elif preset in {"RU", "JP"}:
         language_preset = "RU"
     else:
         language_preset = "EN"
 
     is_japanese = target_language == "JP"
+    is_korean = target_language == "KR"
+    kr_meta_table_open = False
 
     html_data = ""
     opened_tags: list[str] = []
@@ -609,6 +628,19 @@ def format_dialogue(
 
         if note_lookahead_index < len(classified_dialogue_df):
             next_note_target_type = classified_dialogue_df.at[note_lookahead_index, "type"]
+
+        if (
+            is_korean
+            and kr_meta_table_open
+            and row["type"] not in {"description", "objective", "blank"}
+        ):
+            html_data += """
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            """
+            kr_meta_table_open = False
 
         text = prepare_text(str(row["text"]), target_language, gender_mode)
         header = _replace_color_tags(str(row["header"]))
@@ -671,6 +703,21 @@ def format_dialogue(
                             </tbody>
                         </table>
                         """ % (description_header, text)
+                    case "KR":
+                        if not kr_meta_table_open:
+                            html_data += """
+                            <table>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="1" rowspan="1">
+                            """
+                            kr_meta_table_open = True
+
+                        description_content = _wrap_with_base_color(
+                            "<strong>%s: </strong>%s" % (header, text),
+                            "rgb(255, 255, 255)",
+                        )
+                        html_data += "<p>%s</p>" % description_content
             case "objective":
                 match language_preset:
                     case "EN":
@@ -717,6 +764,20 @@ def format_dialogue(
                             </tbody>
                         </table>
                         """ % (objective_header, text)
+                    case "KR":
+                        if not kr_meta_table_open:
+                            html_data += """
+                            <table>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="1" rowspan="1">
+                            """
+                            kr_meta_table_open = True
+
+                        html_data += "<p><strong>%s: </strong>%s</p>" % (
+                            header,
+                            text,
+                        )
             case "missing":
                 continue
             case "addopt":
@@ -725,13 +786,22 @@ def format_dialogue(
                 if language_preset == "CHS":
                     optional_header = _use_fullwidth_colon(optional_header)
 
-                html_data += """
-                <p>%s</p>
-                <table>
-                    <tbody>
-                        <tr>
-                            <td colspan="1" rowspan="1">
-                """ % optional_header
+                if language_preset == "KR":
+                    html_data += """
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td colspan="1" rowspan="1">
+                                    <p><strong style="color: %s;">%s</strong></p>
+                    """ % (KR_YELLOW, optional_header)
+                else:
+                    html_data += """
+                    <p>%s</p>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td colspan="1" rowspan="1">
+                    """ % optional_header
 
                 opened_tags.append("addopt")
             case "choice_flag":
@@ -742,6 +812,19 @@ def format_dialogue(
                         choice_content = _wrap_with_base_color(
                             "<strong>%s：</strong>%s" % (header, text),
                             "rgb(255, 255, 255)",
+                        )
+                    case "KR":
+                        choice_content = (
+                            '<span style="color: %s;">%s</span>'
+                            '<span style="color: %s;">:</span> '
+                            '<span style="color: %s;">%s</span>'
+                            % (
+                                KR_YELLOW,
+                                header,
+                                KR_BASE_COLOR,
+                                KR_WHITE,
+                                text,
+                            )
                         )
                     case "EN":
                         choice_content = _wrap_with_base_color(
@@ -820,8 +903,12 @@ def format_dialogue(
                         html_data += """
                         <p>%s</p>
                         """ % location_content
+                    case "KR":
+                        html_data += """
+                        <p><span style="color: rgb(236, 229, 216);">%s</span></p>
+                        """ % header
             case "dialogue":
-                if last_row_type == "objective":
+                if last_row_type == "objective" and not is_korean:
                     html_data += "<p></p>"
 
                 if (
@@ -871,6 +958,31 @@ def format_dialogue(
                                 dialogue_header,
                                 text,
                             )
+                        case "KR":
+                            inside_addopt = "addopt" in opened_tags
+                            is_traveler = bool(
+                                traveler_name and traveler_name in header
+                            ) or "Traveler" in header
+
+                            if inside_addopt:
+                                speaker_color = KR_YELLOW
+                                text_color = KR_WHITE
+                            elif is_traveler:
+                                speaker_color = KR_BASE_COLOR
+                                text_color = KR_BASE_COLOR
+                            else:
+                                speaker_color = KR_WHITE
+                                text_color = KR_WHITE
+
+                            dialogue_header = (
+                                '<span style="color: %s;">%s</span>'
+                                '<span style="color: %s;">:</span>'
+                                % (speaker_color, header, KR_BASE_COLOR)
+                            )
+                            html_data += (
+                                '<p>%s <span style="color: %s;">%s</span></p>'
+                                % (dialogue_header, text_color, text)
+                            )
             case "sub_mission":
                 if (
                     "choice_branch" in opened_tags
@@ -903,7 +1015,12 @@ def format_dialogue(
                     "rgb(255, 255, 255)",
                 )
 
-                if opened_tags and opened_tags[-1] != "action":
+                if is_korean:
+                    html_data += (
+                        '<p><strong style="color: %s;">%s</strong></p>'
+                        % (KR_WHITE, text)
+                    )
+                elif opened_tags and opened_tags[-1] != "action":
                     # Already inside an optional/choice table; keep the
                     # phrase in that table instead of nesting another one.
                     html_data += """<p>%s</p>""" % action_html
@@ -945,8 +1062,16 @@ def format_dialogue(
 
                             opened_tags.pop()
 
-                if next_row_type != "choice_branch":
+                if next_row_type != "choice_branch" and not is_korean:
                     html_data += "<p></p>"
+
+    if kr_meta_table_open:
+        html_data += """
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            """
 
     if opened_tags:
         for tag in reversed(opened_tags):
