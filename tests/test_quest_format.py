@@ -1151,8 +1151,8 @@ class FormattingTests(unittest.TestCase):
         )
 
         self.assertIn(
-            '<p><strong style="color: rgb(255, 255, 255);">'
-            "A description</strong></p>",
+            '<p><span style="color: rgb(255, 255, 255);">'
+            "<strong>A description</strong></span></p>",
             output,
         )
         self.assertNotIn("<table>", output)
@@ -1202,8 +1202,8 @@ class FormattingTests(unittest.TestCase):
         table = output[table_start:table_end]
 
         self.assertIn(
-            '<strong style="color: rgba(255, 214, 128, 1);">'
-            "Optional Dialogue: Talk to Anastasya</strong>",
+            '<span style="color: rgba(255, 214, 128, 1);">'
+            "<strong>Optional Dialogue: Talk to Anastasya</strong></span>",
             table,
         )
         self.assertIn(
@@ -1211,7 +1211,7 @@ class FormattingTests(unittest.TestCase):
             table,
         )
 
-    def test_korean_traveler_speaker_is_half_transparent(self) -> None:
+    def test_korean_traveler_speaker_is_white(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame({"header": ["여행자"], "text": ["Hello"]}),
             prompt_variables = False,
@@ -1222,11 +1222,10 @@ class FormattingTests(unittest.TestCase):
             result.df,
             "KR",
             target_language = "KR",
-            traveler_name = "여행자",
         )
 
         self.assertIn(
-            '<span style="color: rgba(255, 255, 255, 0.45);">여행자</span>'
+            '<span style="color: rgb(255, 255, 255);">여행자</span>'
             '<span style="color: rgba(255, 255, 255, 0.45);">:</span> '
             '<span style="color: rgba(255, 255, 255, 0.45);">Hello</span>',
             output,

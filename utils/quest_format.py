@@ -153,7 +153,6 @@ class ClassificationResult:
     variable_contexts: dict[str, str] = field(default_factory=dict)
     variable_suffix_contexts: dict[str, str] = field(default_factory=dict)
     has_gendered_content: bool = False
-    traveler_name: str = ""
 
     @property
     def has_prompts(self) -> bool:
@@ -265,11 +264,7 @@ def classify_dialogue(
     if not normalized_location_keys:
         normalized_location_keys = set(normalized_location_map)
 
-    localized_traveler_name = normalized_speaker_map.get(
-        normalize_name("Traveler"),
-        "",
-    )
-    traveler_name = localized_traveler_name
+    traveler_name = normalized_speaker_map.get(normalize_name("Traveler"), "")
 
     if target_language == "JP":
         traveler_name = "(プレイヤー名)"
@@ -455,7 +450,6 @@ def classify_dialogue(
         variable_contexts=variable_contexts,
         variable_suffix_contexts=variable_suffix_contexts,
         has_gendered_content=has_gendered_content,
-        traveler_name=localized_traveler_name,
     )
 
 
@@ -563,7 +557,6 @@ def format_dialogue(
     gender_mode: str | None = None,
     collapse_speakers: bool = False,
     show_gendered_note: bool = False,
-    traveler_name: str | None = None,
 ) -> str:
     if preset == "CHS":
         language_preset = "CHS"
@@ -792,7 +785,7 @@ def format_dialogue(
                         <tbody>
                             <tr>
                                 <td colspan="1" rowspan="1">
-                                    <p><strong style="color: %s;">%s</strong></p>
+                                    <p><span style="color: %s;"><strong>%s</strong></span></p>
                     """ % (KR_YELLOW, optional_header)
                 else:
                     html_data += """
@@ -960,14 +953,9 @@ def format_dialogue(
                             )
                         case "KR":
                             inside_addopt = "addopt" in opened_tags
-                            is_traveler = bool(
-                                traveler_name and traveler_name in header
-                            ) or "Traveler" in header
 
                             if inside_addopt:
                                 speaker_color = KR_YELLOW
-                            elif is_traveler:
-                                speaker_color = KR_BASE_COLOR
                             else:
                                 speaker_color = KR_WHITE
 
@@ -1016,7 +1004,7 @@ def format_dialogue(
 
                 if is_korean:
                     html_data += (
-                        '<p><strong style="color: %s;">%s</strong></p>'
+                        '<p><span style="color: %s;"><strong>%s</strong></span></p>'
                         % (KR_WHITE, text)
                     )
                 elif opened_tags and opened_tags[-1] != "action":
