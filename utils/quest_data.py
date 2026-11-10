@@ -16,9 +16,9 @@ the user a target language picker.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import re
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -27,7 +27,8 @@ import pandas as pd
 
 
 # Used by the page to detect a module left behind by a hot reload.
-_LOADED_AT = time.time()
+with open(__file__, "rb") as _source_file:
+    _SOURCE_HASH = hashlib.sha256(_source_file.read()).hexdigest()
 
 LANGUAGE_LABELS = {
     "EN": "English",

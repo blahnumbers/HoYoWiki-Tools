@@ -8,9 +8,9 @@ workbook so every sheet (``Locations``, ``Names``, ``Special Words``,
 
 from __future__ import annotations
 
+import hashlib
 import io
 import os
-import time
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -20,7 +20,8 @@ DEFAULT_KNOWLEDGE_BASE_SHEET_ID = "1REDNpTKJ-36RXtkmGvNf_2RtDCbFvjNg"
 KNOWLEDGE_BASE_SHEET_ID_ENV = "KNOWLEDGE_BASE_SHEET_ID"
 
 # Used by the page to detect a module left behind by a hot reload.
-_LOADED_AT = time.time()
+with open(__file__, "rb") as _source_file:
+    _SOURCE_HASH = hashlib.sha256(_source_file.read()).hexdigest()
 
 
 def knowledge_base_sheet_id() -> str:

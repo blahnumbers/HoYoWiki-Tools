@@ -6,9 +6,9 @@ lets the page focus on widgets, dialogs and session state.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import re
-import time
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -16,7 +16,8 @@ import pandas as pd
 from utils.quest_data import normalize_name
 
 # Used by the page to detect a module left behind by a hot reload.
-_LOADED_AT = time.time()
+with open(__file__, "rb") as _source_file:
+    _SOURCE_HASH = hashlib.sha256(_source_file.read()).hexdigest()
 
 
 SPEAKER_TYPES = frozenset({"dialogue", "choice_branch"})

@@ -1,7 +1,6 @@
 import hashlib
 import importlib
 import json
-import os
 import urllib.request
 
 import pandas as pd
@@ -13,8 +12,19 @@ import utils.knowledge_base
 import utils.quest_data
 import utils.quest_format
 
+
+def _source_hash(path: str) -> str | None:
+    try:
+        with open(path, "rb") as source_file:
+            return hashlib.sha256(source_file.read()).hexdigest()
+    except OSError:
+        return None
+
+
 # Streamlit Cloud can hot-reload this page while keeping older ``utils``
-# modules in memory. Reload any module whose source file is newer.
+# modules in memory. Reload any module whose source no longer matches the
+# copy that was imported. Comparing content avoids relying on file mtimes,
+# which are not reliable on Community Cloud's mounted source tree.
 for _module in (
     utils.quest_data,
     utils.knowledge_base,
@@ -26,12 +36,12 @@ for _module in (
     if not _module_path:
         continue
 
-    try:
-        _module_mtime = os.path.getmtime(_module_path)
-    except OSError:
+    _current_hash = _source_hash(_module_path)
+
+    if _current_hash is None:
         continue
 
-    if getattr(_module, "_LOADED_AT", 0) < _module_mtime:
+    if getattr(_module, "_SOURCE_HASH", None) != _current_hash:
         importlib.reload(_module)
 
 from utils import quest_format
