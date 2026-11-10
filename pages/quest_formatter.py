@@ -44,6 +44,34 @@ for _module in (
     if getattr(_module, "_SOURCE_HASH", None) != _current_hash:
         importlib.reload(_module)
 
+
+if st.query_params.get("utils_debug") == "1":
+    import inspect
+
+    _quest_data_path = getattr(utils.quest_data, "__file__", "")
+    st.write("quest_data path:", _quest_data_path)
+    st.write(
+        "stored hash:",
+        getattr(utils.quest_data, "_SOURCE_HASH", None),
+    )
+    st.write("current hash:", _source_hash(_quest_data_path))
+    st.write(
+        "QuestData fields:",
+        list(
+            getattr(
+                utils.quest_data.QuestData,
+                "__dataclass_fields__",
+                {},
+            )
+        ),
+    )
+    st.write(
+        "parse has descriptions:",
+        "descriptions" in inspect.getsource(
+            utils.quest_data.parse_quest_file
+        ),
+    )
+
 from utils import quest_format
 from utils.copy_component import copy_formatted_text
 from utils.knowledge_base import (
