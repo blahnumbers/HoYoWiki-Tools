@@ -45,33 +45,6 @@ for _module in (
         importlib.reload(_module)
 
 
-if st.query_params.get("utils_debug") == "1":
-    import inspect
-
-    _quest_data_path = getattr(utils.quest_data, "__file__", "")
-    st.write("quest_data path:", _quest_data_path)
-    st.write(
-        "stored hash:",
-        getattr(utils.quest_data, "_SOURCE_HASH", None),
-    )
-    st.write("current hash:", _source_hash(_quest_data_path))
-    st.write(
-        "QuestData fields:",
-        list(
-            getattr(
-                utils.quest_data.QuestData,
-                "__dataclass_fields__",
-                {},
-            )
-        ),
-    )
-    st.write(
-        "parse has descriptions:",
-        "descriptions" in inspect.getsource(
-            utils.quest_data.parse_quest_file
-        ),
-    )
-
 from utils import quest_format
 from utils.copy_component import copy_formatted_text
 from utils.knowledge_base import (
@@ -175,7 +148,11 @@ INPUT_CONTEXT_SCRIPT = """
 
 
 @st.cache_data(show_spinner=False)
-def _parse_uploaded(file_bytes: bytes, file_name: str) -> QuestData:
+def _parse_uploaded(
+    file_bytes: bytes,
+    file_name: str,
+    parser_version: str,
+) -> QuestData:
     return parse_quest_file(file_bytes, file_name)
 
 
@@ -248,6 +225,7 @@ def _knowledge_base_sheet_id() -> str:
 @st.cache_data(ttl = 3600, show_spinner = "Loading knowledge base…")
 def _fetch_knowledge_base(
     export_url: str,
+    parser_version: str,
 ) -> tuple[KnowledgeBase | None, str | None]:
     try:
         with urllib.request.urlopen(
@@ -280,7 +258,8 @@ def _render_knowledge_base_control() -> KnowledgeBase | None:
 
     sheet_id = _knowledge_base_sheet_id()
     knowledge_base, error = _fetch_knowledge_base(
-        knowledge_base_export_url(sheet_id)
+        knowledge_base_export_url(sheet_id),
+        getattr(utils.knowledge_base, "_SOURCE_HASH", ""),
     )
 
     if knowledge_base is None:
@@ -535,7 +514,11 @@ def _render_import_mode() -> None:
         st.stop()
 
     try:
-        quest = _parse_uploaded(imported_file.getvalue(), imported_file.name)
+        quest = _parse_uploaded(
+            imported_file.getvalue(),
+            imported_file.name,
+            getattr(utils.quest_data, "_SOURCE_HASH", ""),
+        )
     except QuestDataError as error:
         st.error("Could not read this file: %s" % error)
         st.stop()
