@@ -599,6 +599,7 @@ def format_objective(
             continue
 
         text = "" if row.get("text") is None else str(row["text"])
+        text = _literal_newlines_to_breaks(text)
         text = _replace_color_tags(text)
 
         if target_language:
@@ -702,7 +703,9 @@ def format_dialogue(
     else:
         language_preset = "EN"
 
-    if (target_language or preset) in DESCRIPTION_FIRST_LANGUAGES:
+    output_language = target_language or preset
+
+    if output_language in DESCRIPTION_FIRST_LANGUAGES:
         classified_dialogue_df = _order_description_before_objectives(
             classified_dialogue_df
         )
@@ -1100,9 +1103,7 @@ def format_dialogue(
                     and html_data.endswith("</p>")
                     and text.strip()
                 ):
-                    if (
-                        target_language or preset
-                    ) in TALL_REPEATED_LINE_LANGUAGES:
+                    if output_language in TALL_REPEATED_LINE_LANGUAGES:
                         html_data += "<p>%s</p>" % text
                     else:
                         html_data = html_data[:-4] + "<br>%s</p>" % text
@@ -1264,6 +1265,19 @@ def format_dialogue(
                 ):
                     add_spacing = False
 
+                if output_language == "RU":
+                    if (
+                        previous_content_type == "location"
+                        and next_content_type == "description"
+                    ):
+                        add_spacing = False
+
+                    if (
+                        previous_content_type == "objective"
+                        and next_content_type == "objective"
+                    ):
+                        add_spacing = False
+
                 if add_spacing:
                     html_data += "<p></p>"
 
@@ -1291,11 +1305,22 @@ def format_dialogue(
     return html_data
 
 
+def _literal_newlines_to_breaks(text: str) -> str:
+    """Convert literal ``\\n`` sequences from the sheet into HTML breaks."""
+
+    return (
+        text.replace("\\r\\n", "<br>")
+        .replace("\\n", "<br>")
+        .replace("\\r", "<br>")
+    )
+
+
 def prepare_text(
     text: str,
     target_language: str | None = None,
     gender_mode: str | None = None,
 ) -> str:
+    text = _literal_newlines_to_breaks(text)
     text = _replace_color_tags(text)
 
     if target_language:

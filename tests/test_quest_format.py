@@ -581,6 +581,16 @@ class FormattingTests(unittest.TestCase):
             "<ol><li><p>One</p></li><li><p>Two</p></li></ol>",
         )
 
+    def test_format_objective_converts_literal_newlines_to_breaks(self) -> None:
+        objective_df = pd.DataFrame(
+            {"header": ["1"], "text": [r"First line\nSecond line"]}
+        )
+
+        self.assertEqual(
+            quest_format.format_objective(objective_df),
+            "<ol><li><p>First line<br>Second line</p></li></ol>",
+        )
+
     def test_format_objective_puts_the_description_before_the_list(self) -> None:
         objective_df = pd.DataFrame(
             {
@@ -727,6 +737,71 @@ class FormattingTests(unittest.TestCase):
             output.find("First objective"),
             output.find("Second objective"),
         )
+
+    def test_russian_removes_blank_between_location_and_description(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Somewhere, Snezhnaya",
+                        "",
+                        "Quest Description",
+                        "Paimon",
+                    ],
+                    "text": ["", "", "Description line", "Hello"],
+                }
+            ),
+            location_keys = {"Somewhere, Snezhnaya"},
+            target_language = "RU",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        segment = output[
+            output.find("Somewhere, Snezhnaya"):
+            output.find("Description line")
+        ]
+        self.assertNotIn("<p></p>", segment)
+
+    def test_russian_removes_blank_between_consecutive_objectives(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Quest Objective",
+                        "",
+                        "Quest Objective",
+                        "Paimon",
+                    ],
+                    "text": [
+                        "First objective",
+                        "",
+                        "Second objective",
+                        "Hello",
+                    ],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        segment = output[
+            output.find("First objective"):
+            output.find("Second objective")
+        ]
+        self.assertNotIn("<p></p>", segment)
 
     def test_description_order_is_unchanged_for_english(self) -> None:
         result = quest_format.classify_dialogue(
@@ -2207,6 +2282,16 @@ class FormattingTests(unittest.TestCase):
 
         ruby_output = quest_format.prepare_text("pre{RUBY#[D]ruby text}base")
         self.assertIn('<custom-ruby data-ruby="prebase|ruby text">', ruby_output)
+
+    def test_prepare_text_converts_literal_newlines_to_breaks(self) -> None:
+        self.assertEqual(
+            quest_format.prepare_text(r"Line one\nLine two"),
+            "Line one<br>Line two",
+        )
+        self.assertEqual(
+            quest_format.prepare_text(r"Line one\r\nLine two"),
+            "Line one<br>Line two",
+        )
 
     def test_color_tags_are_converted_to_html_spans(self) -> None:
         self.assertEqual(
