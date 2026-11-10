@@ -92,6 +92,47 @@ class QuestDataParsingTests(unittest.TestCase):
             ["Общее описание", "Задание один", ""],
         )
 
+    def test_dialogue_dataframe_injects_a_summary_description(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Title", "Fixture Quest", "Тестовое задание"],
+            ["Quest Description", "Summary text", "Текст описания"],
+            ["Quest Objectives"],
+            ["1", "Objective one", "Задание один"],
+            ["Dialogue"],
+            ["White Birch Snowgrave, Snezhnaya"],
+            ["Quest Objective", "Objective marker", "Маркер задания"],
+            ["Katheryne", "Hello", "Привет"],
+        ]
+        path = self._write_rows(rows, "summary-description.xlsx")
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+        dialogue_df = quest.dialogue_dataframe("RU")
+
+        self.assertEqual(
+            dialogue_df["header"].tolist(),
+            [
+                "White Birch Snowgrave, Snezhnaya",
+                "Quest Description",
+                "Quest Objective",
+                "Katheryne",
+            ],
+        )
+        self.assertEqual(dialogue_df.iloc[1]["text"], "Текст описания")
+
+    def test_dialogue_dataframe_does_not_duplicate_an_in_dialogue_description(
+        self,
+    ) -> None:
+        path = self._write_xlsx()
+        quest = parse_quest_file(path.read_bytes(), path.name)
+
+        dialogue_df = quest.dialogue_dataframe("RU")
+
+        self.assertEqual(
+            dialogue_df["header"].tolist().count("Quest Description"),
+            1,
+        )
+
     def test_parses_csv_like_xlsx(self) -> None:
         xlsx_path = self._write_xlsx()
         csv_path = self._write_csv()

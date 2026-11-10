@@ -69,6 +69,19 @@ def normalize_name(value: str) -> str:
     return NAME_WHITESPACE_RE.sub(" ", str(value)).strip()
 
 
+def _is_description_key(value: str) -> bool:
+    return "desc" in str(value).casefold()
+
+
+def _is_objective_key(value: str) -> bool:
+    key = str(value).strip()
+
+    return (
+        key.casefold() in {"quest objective", "quest objectives"}
+        or bool(OBJECTIVE_KEY_RE.fullmatch(key))
+    )
+
+
 @dataclass
 class QuestData:
     file_name: str
@@ -97,20 +110,35 @@ class QuestData:
         )
 
     def dialogue_dataframe(self, language: str) -> pd.DataFrame:
+        entries = list(self.dialogue_rows)
+
+        if self.descriptions and not any(
+            _is_description_key(entry["key"]) for entry in entries
+        ):
+            insert_at = next(
+                (
+                    position
+                    for position, entry in enumerate(entries)
+                    if _is_objective_key(entry["key"])
+                ),
+                0,
+            )
+            entries[insert_at:insert_at] = self.descriptions
+
         return pd.DataFrame(
             {
                 "header": pd.Series(
-                    [entry["key"] for entry in self.dialogue_rows],
+                    [entry["key"] for entry in entries],
                     dtype = str,
                 ),
                 "text": pd.Series(
-                    [entry.get(language, "") for entry in self.dialogue_rows],
+                    [entry.get(language, "") for entry in entries],
                     dtype = str,
                 ),
                 "bold": pd.Series(
                     [
                         language in self.dialogue_bold.get(entry["row"], set())
-                        for entry in self.dialogue_rows
+                        for entry in entries
                     ],
                     dtype = bool,
                 ),
