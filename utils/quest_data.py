@@ -73,6 +73,7 @@ class QuestData:
     file_name: str
     languages: list[str]
     titles: dict[str, str]
+    descriptions: list[dict[str, str]]
     objectives: list[dict[str, str]]
     special_speakers: list[dict[str, str]]
     locations: list[dict[str, str]]
@@ -84,10 +85,12 @@ class QuestData:
         return self.titles.get(language, "")
 
     def objective_dataframe(self, language: str) -> pd.DataFrame:
+        entries = self.descriptions + self.objectives
+
         return pd.DataFrame(
             {
-                "header": [entry["key"] for entry in self.objectives],
-                "text": [entry.get(language, "") for entry in self.objectives],
+                "header": [entry["key"] for entry in entries],
+                "text": [entry.get(language, "") for entry in entries],
             },
             dtype = str,
         )
@@ -222,6 +225,9 @@ def parse_quest_file(file_bytes: bytes, file_name: str) -> QuestData:
         rows, language_columns
     )
 
+    descriptions = _parse_descriptions(
+        rows, language_columns, dialogue_header_index, excluded_rows
+    )
     objectives = _parse_objectives(
         rows, language_columns, dialogue_header_index, excluded_rows
     )
@@ -241,6 +247,7 @@ def parse_quest_file(file_bytes: bytes, file_name: str) -> QuestData:
         file_name=file_name,
         languages=languages,
         titles=titles,
+        descriptions=descriptions,
         objectives=objectives,
         special_speakers=translation_segments["special_speakers"],
         locations=translation_segments["locations"],
@@ -471,6 +478,37 @@ def _parse_segment_entries(
         row_index += 1
 
     return entries, row_index
+
+
+def _parse_descriptions(
+    rows: list[list[str]],
+    language_columns: dict[str, int],
+    dialogue_header_index: int,
+    excluded_rows: set[int],
+) -> list[dict[str, str]]:
+    """Read quest description rows from the summary block above Dialogue."""
+
+    entries: list[dict[str, str]] = []
+
+    for row_index in range(0, dialogue_header_index):
+        if row_index in excluded_rows:
+            continue
+
+        key = _first_cell(rows[row_index]).strip()
+
+        if "desc" not in key.casefold():
+            continue
+
+        values = _row_values(rows[row_index], language_columns)
+
+        if not any(normalize_name(value) for value in values.values()):
+            continue
+
+        entry = {"row": str(row_index + 1), "key": key}
+        entry.update(values)
+        entries.append(entry)
+
+    return entries
 
 
 def _parse_objectives(

@@ -549,9 +549,10 @@ def _render_import_mode() -> None:
         st.markdown("**%s**" % title)
 
     st.caption(
-        "%d objectives · %d dialogue rows · %d special speaker(s) · "
-        "%d location(s) · %d field label(s)"
+        "%d description(s) · %d objectives · %d dialogue rows · "
+        "%d special speaker(s) · %d location(s) · %d field label(s)"
         % (
+            len(quest.descriptions),
             len(quest.objectives),
             len(quest.dialogue_rows),
             len(quest.special_speakers),
@@ -651,7 +652,7 @@ def _render_import_mode() -> None:
                     hide_index = True,
                 )
 
-        st.markdown("**Objectives**")
+        st.markdown("**Description & Objectives**")
         st.dataframe(
             quest.objective_dataframe(target_language).head(25),
             hide_index = True,
@@ -707,6 +708,7 @@ def _render_import_mode() -> None:
                     objective_df,
                     target_language = target_language,
                     gender_mode = gender_mode,
+                    field_label_map = field_label_map,
                 )
             )
 
@@ -794,6 +796,7 @@ def _render_paste_mode() -> None:
                     objective_df,
                     target_language = preset,
                     gender_mode = gender_mode,
+                    field_label_map = kb_maps["labels"],
                 )
             )
 

@@ -64,6 +64,11 @@ class QuestDataParsingTests(unittest.TestCase):
 
         self.assertEqual(quest.languages, ["EN", "CHS", "DE", "RU"])
         self.assertEqual(quest.title_for("RU"), "Тестовое задание")
+        self.assertEqual(
+            [entry["key"] for entry in quest.descriptions],
+            ["Quest Description"],
+        )
+        self.assertEqual(quest.descriptions[0]["RU"], "Общее описание")
         self.assertEqual([entry["key"] for entry in quest.objectives], ["1", "2"])
         self.assertEqual(len(quest.special_speakers), 4)
         self.assertEqual(quest.speaker_map("RU")["Tanit Tribe Scout"], "Разведчик")
@@ -71,6 +76,21 @@ class QuestDataParsingTests(unittest.TestCase):
         self.assertNotIn("Messenger", quest.speaker_map("RU"))
         self.assertEqual(quest.dialogue_rows[0]["key"], "(If you talked to Katheryne to start the quest)")
         self.assertEqual(quest.dialogue_rows[-1]["key"], "")
+
+    def test_objective_dataframe_starts_with_the_quest_description(self) -> None:
+        path = self._write_xlsx()
+        quest = parse_quest_file(path.read_bytes(), path.name)
+
+        objective_df = quest.objective_dataframe("RU")
+
+        self.assertEqual(
+            objective_df["header"].tolist(),
+            ["Quest Description", "1", "2"],
+        )
+        self.assertEqual(
+            objective_df["text"].tolist(),
+            ["Общее описание", "Задание один", ""],
+        )
 
     def test_parses_csv_like_xlsx(self) -> None:
         xlsx_path = self._write_xlsx()

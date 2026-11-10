@@ -527,32 +527,103 @@ def apply_translations(
         classified_df.at[row_index, "text"] = text
 
 
+def _description_table(
+    header: str,
+    text: str,
+    language_preset: str,
+) -> str:
+    """Render a quest description box for the given language preset."""
+
+    match language_preset:
+        case "EN":
+            content = _wrap_with_base_color(
+                "<strong>%s: </strong> %s" % (header, text),
+                "rgb(255, 255, 255)",
+            )
+        case "RU":
+            content = (
+                _wrap_with_base_color(
+                    "<strong>%s: </strong>" % header,
+                    "rgb(255, 255, 255)",
+                )
+                + text
+            )
+        case "CHS":
+            content = (
+                _wrap_with_base_color(
+                    "<strong>%s：</strong>" % header,
+                    "rgb(255, 255, 255)",
+                )
+                + text
+            )
+        case "KR":
+            content = _wrap_with_base_color(
+                "<strong>%s: </strong>%s" % (header, text),
+                "rgb(255, 255, 255)",
+            )
+        case _:
+            content = "<strong>%s: </strong>%s" % (header, text)
+
+    return """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p>%s</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        """ % content
+
+
 def format_objective(
     objective_df: pd.DataFrame,
     target_language: str | None = None,
     gender_mode: str | None = None,
+    field_label_map: dict[str, str] | None = None,
 ) -> str:
+    preset = markup_preset_for(target_language)
+    normalized_label_map = {
+        normalize_name(key): value
+        for key, value in (field_label_map or {}).items()
+    }
+    description_html = ""
     html_data = "<ol>"
 
     for _, row in objective_df.iterrows():
         header = "" if row.get("header") is None else str(row["header"]).strip()
 
-        if header:
-            text = "" if row.get("text") is None else str(row["text"])
-            text = _replace_color_tags(text)
+        if not header:
+            continue
+
+        text = "" if row.get("text") is None else str(row["text"])
+        text = _replace_color_tags(text)
+
+        if target_language:
+            text = _replace_gender_pairs(
+                text,
+                target_language,
+                gender_mode or gender_mode_for(target_language),
+            )
+
+        if classify_row(header, text) == "description":
+            label = normalized_label_map.get(normalize_name(header), header)
 
             if target_language:
-                text = _replace_gender_pairs(
-                    text,
+                label = _replace_gender_pairs(
+                    label,
                     target_language,
                     gender_mode or gender_mode_for(target_language),
                 )
 
+            description_html += _description_table(label, text, preset)
+        else:
             html_data += "<li><p>%s</p></li>" % text
 
     html_data += "</ol>"
 
-    return html_data
+    return description_html + html_data
 
 
 def markup_preset_for(language: str | None) -> str:
@@ -772,70 +843,23 @@ def format_dialogue(
 
         match row["type"]:
             case "description":
-                match language_preset:
-                    case "EN":
-                        description_content = _wrap_with_base_color(
-                            "<strong>%s: </strong> %s" % (header, text),
-                            "rgb(255, 255, 255)",
-                        )
+                if language_preset == "KR":
+                    if not kr_meta_table_open:
                         html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p>%s</p>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        """ % description_content
-                    case "RU":
-                        description_header = _wrap_with_base_color(
-                            "<strong>%s: </strong>" % header,
-                            "rgb(255, 255, 255)",
-                        )
-                        html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p>%s%s</p>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        """ % (description_header, text)
-                    case "CHS":
-                        description_header = _wrap_with_base_color(
-                            "<strong>%s：</strong>" % header,
-                            "rgb(255, 255, 255)",
-                        )
-                        html_data += """
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td colspan="1" rowspan="1">
-                                        <p>%s%s</p>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        """ % (description_header, text)
-                    case "KR":
-                        if not kr_meta_table_open:
-                            html_data += """
                             <table>
                                 <tbody>
                                     <tr>
                                         <td colspan="1" rowspan="1">
                             """
-                            kr_meta_table_open = True
+                        kr_meta_table_open = True
 
-                        description_content = _wrap_with_base_color(
-                            "<strong>%s: </strong>%s" % (header, text),
-                            "rgb(255, 255, 255)",
-                        )
-                        html_data += "<p>%s</p>" % description_content
+                    description_content = _wrap_with_base_color(
+                        "<strong>%s: </strong>%s" % (header, text),
+                        "rgb(255, 255, 255)",
+                    )
+                    html_data += "<p>%s</p>" % description_content
+                else:
+                    html_data += _description_table(header, text, language_preset)
             case "objective":
                 match language_preset:
                     case "EN":

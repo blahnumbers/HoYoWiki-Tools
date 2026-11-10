@@ -581,6 +581,28 @@ class FormattingTests(unittest.TestCase):
             "<ol><li><p>One</p></li><li><p>Two</p></li></ol>",
         )
 
+    def test_format_objective_puts_the_description_before_the_list(self) -> None:
+        objective_df = pd.DataFrame(
+            {
+                "header": ["Quest Description", "1", "2"],
+                "text": ["Description line", "One", "Two"],
+            }
+        )
+
+        output = quest_format.format_objective(
+            objective_df,
+            target_language = "RU",
+            field_label_map = {"Quest Description": "Описание задания"},
+        )
+
+        self.assertLess(
+            output.find("Описание задания"),
+            output.find("<ol>"),
+        )
+        self.assertLess(output.find("<ol>"), output.find("One"))
+        self.assertIn("Description line", output)
+        self.assertIn("<li><p>Two</p></li>", output)
+
     def test_format_dialogue_uses_the_selected_preset(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame({"header": ["Katheryne"], "text": ["Hello"]}),
