@@ -648,6 +648,87 @@ class FormattingTests(unittest.TestCase):
             output,
         )
 
+    def test_russian_description_is_moved_before_the_objective(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Quest Objective", "Quest Description"],
+                    "text": ["Objective line", "Description line"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertLess(
+            output.find("Description line"),
+            output.find("Objective line"),
+        )
+
+    def test_russian_description_moves_before_the_objective_block(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Quest Objective",
+                        "Quest Objective",
+                        "Quest Description",
+                    ],
+                    "text": [
+                        "First objective",
+                        "Second objective",
+                        "Description line",
+                    ],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertLess(
+            output.find("Description line"),
+            output.find("First objective"),
+        )
+        self.assertLess(
+            output.find("First objective"),
+            output.find("Second objective"),
+        )
+
+    def test_description_order_is_unchanged_for_english(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Quest Objective", "Quest Description"],
+                    "text": ["Objective line", "Description line"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "EN",
+        )
+
+        self.assertLess(
+            output.find("Objective line"),
+            output.find("Description line"),
+        )
+
     def test_chinese_description_label_is_bold_and_text_is_plain(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
@@ -733,7 +814,7 @@ class FormattingTests(unittest.TestCase):
             japanese_output,
         )
 
-    def test_repeating_speaker_lines_collapse_into_one_paragraph(self) -> None:
+    def test_repeating_speaker_lines_use_separate_paragraphs_in_russian(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -753,11 +834,35 @@ class FormattingTests(unittest.TestCase):
 
         self.assertIn(
             "<strong>Anastasya: </strong></span>"
-            "<br>First line.<br>Second line.</p>",
+            "<br>First line.</p><p>Second line.</p>",
             output,
         )
         self.assertEqual(output.count("Anastasya"), 1)
         self.assertIn("Paimon line.", output)
+
+    def test_repeating_speaker_lines_stay_merged_for_japanese(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Anastasya", "Anastasya"],
+                    "text": ["First line.", "Second line."],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "JP",
+            collapse_speakers = True,
+        )
+
+        self.assertIn(
+            "<strong>Anastasya: </strong></span>"
+            "<br>First line.<br>Second line.</p>",
+            output,
+        )
 
     def test_repeating_speaker_lines_stay_separate_by_default(self) -> None:
         result = quest_format.classify_dialogue(

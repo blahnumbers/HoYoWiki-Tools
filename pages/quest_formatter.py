@@ -174,8 +174,9 @@ def _render_gender_mode(language: str) -> str:
 
 
 COLLAPSE_SPEAKERS_HELP = (
-    "Merge consecutive dialogue lines from the same speaker into one paragraph, "
-    "using a line break instead of a new paragraph."
+    "Show the speaker name once for consecutive lines from the same speaker. "
+    "Russian puts each following line in its own paragraph; other languages "
+    "keep them in one paragraph with a line break."
 )
 
 

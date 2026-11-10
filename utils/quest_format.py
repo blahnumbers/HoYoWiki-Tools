@@ -118,6 +118,14 @@ KR_YELLOW = "rgba(255, 214, 128, 1)"
 # Languages where consecutive lines from the same speaker are merged by default.
 COLLAPSE_SPEAKER_LANGUAGES = frozenset({"RU", "JP"})
 
+# Languages where each repeated speaker line gets its own paragraph instead of
+# a soft line break. The speaker name is still only shown on the first line.
+TALL_REPEATED_LINE_LANGUAGES = frozenset({"RU"})
+
+# Languages where the quest description box must be rendered before the
+# quest objective box, even when the source sheet lists the objective first.
+DESCRIPTION_FIRST_LANGUAGES = frozenset({"RU"})
+
 # Languages with a dedicated convention keep it; everything else uses M/F.
 GENDER_LANGUAGE_PREFERENCES = {
     "DE": GENDER_MODE_MALE_FIRST,
@@ -559,6 +567,51 @@ def markup_preset_for(language: str | None) -> str:
     return "RU" if language in {"RU", "JP"} else "EN"
 
 
+def _order_description_before_objectives(
+    classified_dialogue_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Move a description that trails its objective block in front of it."""
+
+    if classified_dialogue_df.empty:
+        return classified_dialogue_df
+
+    rows = list(classified_dialogue_df.iterrows())
+    changed = True
+
+    while changed:
+        changed = False
+
+        for position, (_, row) in enumerate(rows):
+            if row["type"] != "description":
+                continue
+
+            previous = position - 1
+
+            while previous >= 0 and rows[previous][1]["type"] == "blank":
+                previous -= 1
+
+            if previous < 0 or rows[previous][1]["type"] != "objective":
+                continue
+
+            start = previous
+            candidate = previous - 1
+
+            while candidate >= 0:
+                if rows[candidate][1]["type"] == "objective":
+                    start = candidate
+                    candidate -= 1
+                elif rows[candidate][1]["type"] == "blank":
+                    candidate -= 1
+                else:
+                    break
+
+            rows.insert(start, rows.pop(position))
+            changed = True
+            break
+
+    return pd.DataFrame([row for _, row in rows]).reset_index(drop = True)
+
+
 def format_dialogue(
     classified_dialogue_df: pd.DataFrame,
     preset: str = "EN",
@@ -576,6 +629,11 @@ def format_dialogue(
         language_preset = "RU"
     else:
         language_preset = "EN"
+
+    if (target_language or preset) in DESCRIPTION_FIRST_LANGUAGES:
+        classified_dialogue_df = _order_description_before_objectives(
+            classified_dialogue_df
+        )
 
     is_japanese = target_language == "JP"
     is_korean = target_language == "KR"
@@ -1017,7 +1075,12 @@ def format_dialogue(
                     and html_data.endswith("</p>")
                     and text.strip()
                 ):
-                    html_data = html_data[:-4] + "<br>%s</p>" % text
+                    if (
+                        target_language or preset
+                    ) in TALL_REPEATED_LINE_LANGUAGES:
+                        html_data += "<p>%s</p>" % text
+                    else:
+                        html_data = html_data[:-4] + "<br>%s</p>" % text
                 else:
                     match language_preset:
                         case "EN":
