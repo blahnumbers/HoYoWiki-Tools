@@ -803,6 +803,59 @@ class FormattingTests(unittest.TestCase):
         ]
         self.assertNotIn("<p></p>", segment)
 
+    def test_location_is_moved_above_a_leading_description(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Quest Description",
+                        "Somewhere, Snezhnaya",
+                        "Quest Objective",
+                        "Paimon",
+                    ],
+                    "text": ["Description line", "", "Objective line", "Hello"],
+                }
+            ),
+            location_keys = {"Somewhere, Snezhnaya"},
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        for language in ("EN", "RU", "JP", "CHS", "KR"):
+            with self.subTest(language = language):
+                output = quest_format.format_dialogue(
+                    result.df,
+                    quest_format.markup_preset_for(language),
+                    target_language = language,
+                )
+
+                self.assertLess(
+                    output.find("Somewhere, Snezhnaya"),
+                    output.find("Description line"),
+                )
+
+    def test_location_is_not_moved_from_the_middle_of_dialogue(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon", "Somewhere, Snezhnaya", "Paimon"],
+                    "text": ["Before", "", "After"],
+                }
+            ),
+            location_keys = {"Somewhere, Snezhnaya"},
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "EN",
+        )
+
+        self.assertLess(output.find("Before"), output.find("Somewhere"))
+        self.assertLess(output.find("Somewhere"), output.find("After"))
+
     def test_description_order_is_unchanged_for_english(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(

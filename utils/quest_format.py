@@ -685,6 +685,53 @@ def _order_description_before_objectives(
     return pd.DataFrame([row for _, row in rows]).reset_index(drop = True)
 
 
+def _order_leading_location_first(
+    classified_dialogue_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Move the opening location above any quest summary rows."""
+
+    if classified_dialogue_df.empty:
+        return classified_dialogue_df
+
+    rows = list(classified_dialogue_df.iterrows())
+    location_position = next(
+        (
+            position
+            for position, (_, row) in enumerate(rows)
+            if row["type"] == "location"
+        ),
+        None,
+    )
+
+    if location_position is None:
+        return classified_dialogue_df
+
+    summary_types = {"description", "objective", "sub_mission", "blank"}
+
+    if any(
+        rows[position][1]["type"] not in summary_types
+        for position in range(location_position)
+    ):
+        return classified_dialogue_df
+
+    first_content = next(
+        (
+            position
+            for position, (_, row) in enumerate(rows)
+            if row["type"] != "blank"
+        ),
+        0,
+    )
+
+    if location_position == first_content:
+        return classified_dialogue_df
+
+    location_row = rows.pop(location_position)
+    rows.insert(first_content, location_row)
+
+    return pd.DataFrame([row for _, row in rows]).reset_index(drop = True)
+
+
 def format_dialogue(
     classified_dialogue_df: pd.DataFrame,
     preset: str = "EN",
@@ -709,6 +756,10 @@ def format_dialogue(
         classified_dialogue_df = _order_description_before_objectives(
             classified_dialogue_df
         )
+
+    classified_dialogue_df = _order_leading_location_first(
+        classified_dialogue_df
+    )
 
     is_japanese = target_language == "JP"
     is_korean = target_language == "KR"
