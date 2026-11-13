@@ -51,6 +51,11 @@ LANGUAGE_LABELS = {
 LANGUAGE_CODE_RE = re.compile(r"^[A-Z]{2,3}(?:[-_][A-Z]{2,4})?$")
 OBJECTIVE_KEY_RE = re.compile(r"^\d+(?:\.0+)?$")
 NAME_WHITESPACE_RE = re.compile(r"\s+")
+CONDITIONAL_HEADER_RE = re.compile(
+    r"^\s*(?:\(|（|If\b|When\b|After\b|Before\b|Unless\b|While\b)",
+    re.IGNORECASE,
+)
+CONDITIONAL_BORDER_STYLES = frozenset({"medium", "thick"})
 
 TRANSLATION_SEGMENT_KEYS = {
     "special speaker": "special_speakers",
@@ -141,6 +146,10 @@ class QuestData:
                         for entry in entries
                     ],
                     dtype = bool,
+                ),
+                "conditional": pd.Series(
+                    [entry.get("conditional", "") for entry in entries],
+                    dtype = str,
                 ),
             }
         )
@@ -263,12 +272,16 @@ def parse_quest_file(file_bytes: bytes, file_name: str) -> QuestData:
     bold_cells = _read_bold_cells(
         file_bytes, file_name, language_columns, len(rows)
     )
+    conditional_blocks = _read_conditional_blocks(
+        file_bytes, file_name, language_columns, len(rows)
+    )
     dialogue_rows, dialogue_bold = _parse_dialogue_rows(
         rows,
         language_columns,
         dialogue_header_index + 1,
         excluded_rows,
         bold_cells,
+        conditional_blocks,
     )
     titles = _parse_title(rows, language_columns, language_row_index)
 
@@ -319,6 +332,94 @@ def _read_bold_cells(
         return bold_cells
     finally:
         workbook.close()
+
+
+def _read_conditional_blocks(
+    file_bytes: bytes,
+    file_name: str,
+    language_columns: dict[str, int],
+    row_count: int,
+) -> dict[int, str]:
+    """Return sheet rows grouped by medium-bordered conditional blocks."""
+
+    suffix = Path(file_name).suffix.lower()
+
+    if suffix not in {".xlsx", ".xlsm"}:
+        return {}
+
+    try:
+        workbook = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    except Exception:
+        return {}
+
+    try:
+        worksheet = workbook.worksheets[0]
+        border_column = language_columns.get("EN")
+
+        if border_column is None and language_columns:
+            border_column = next(iter(language_columns.values()))
+
+        if border_column is None:
+            return {}
+
+        blocks: dict[int, str] = {}
+        block_id = 0
+        start: int | None = None
+
+        for row_index in range(row_count):
+            cell = worksheet.cell(
+                row = row_index + 1,
+                column = border_column + 1,
+            )
+            top = cell.border.top.style if cell.border.top else None
+            bottom = cell.border.bottom.style if cell.border.bottom else None
+
+            if top in CONDITIONAL_BORDER_STYLES:
+                start = row_index
+
+            if start is None or bottom not in CONDITIONAL_BORDER_STYLES:
+                continue
+
+            end = row_index
+            header_index = start - 1
+
+            if header_index >= 0 and _is_conditional_header(
+                worksheet, header_index, language_columns
+            ):
+                block_id += 1
+
+                for block_row in range(header_index, end + 1):
+                    blocks[block_row] = str(block_id)
+
+            start = None
+
+        return blocks
+    finally:
+        workbook.close()
+
+
+def _is_conditional_header(
+    worksheet: openpyxl.worksheet.worksheet.Worksheet,
+    row_index: int,
+    language_columns: dict[str, int],
+) -> bool:
+    header = _cell_text(
+        worksheet.cell(row = row_index + 1, column = 1).value
+    ).strip()
+
+    if not header or not CONDITIONAL_HEADER_RE.match(header):
+        return False
+
+    for column_index in language_columns.values():
+        if _cell_text(
+            worksheet.cell(
+                row = row_index + 1,
+                column = column_index + 1,
+            ).value
+        ).strip():
+            return False
+
+    return True
 
 
 def _read_rows(file_bytes: bytes, file_name: str) -> list[list[str]]:
@@ -592,6 +693,7 @@ def _parse_dialogue_rows(
     start_index: int,
     excluded_rows: set[int],
     bold_cells: set[tuple[int, int]],
+    conditional_blocks: dict[int, str],
 ) -> tuple[list[dict[str, str]], dict[str, set[str]]]:
     entries: list[dict[str, str]] = []
     bold_by_row: dict[str, set[str]] = {}
@@ -602,7 +704,11 @@ def _parse_dialogue_rows(
 
         row = rows[row_index]
         values = _row_values(row, language_columns)
-        entry = {"row": str(row_index + 1), "key": _first_cell(row).strip()}
+        entry = {
+            "row": str(row_index + 1),
+            "key": _first_cell(row).strip(),
+            "conditional": conditional_blocks.get(row_index, ""),
+        }
         entry.update(values)
         entries.append(entry)
 

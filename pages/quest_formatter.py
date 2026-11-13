@@ -684,6 +684,7 @@ def _render_import_mode() -> None:
             quest.dialogue_dataframe(target_language)
             .head(50)
             .rename(columns = {"bold": "Bold"})
+            .drop(columns = ["conditional"], errors = "ignore")
         )
         st.dataframe(
             preview_dialogue_df,
@@ -703,6 +704,7 @@ def _render_import_mode() -> None:
     dialogue_table_config = {
         **import_table_config,
         "bold": None,
+        "conditional": None,
     }
 
     objective_tab, dialogue_tab = st.tabs(["Objective", "Dialogue"])

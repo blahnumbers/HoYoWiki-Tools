@@ -979,6 +979,51 @@ class FormattingTests(unittest.TestCase):
         ]
         self.assertNotIn("<p></p>", segment)
 
+    def test_conditional_block_wraps_its_choices_in_one_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "If Traveler has an invitation",
+                        "Paimon",
+                        "Choice",
+                        "1. Traveler",
+                        "Paimon",
+                        "Paimon",
+                    ],
+                    "text": [
+                        "",
+                        "Inside line",
+                        "",
+                        "Pick this",
+                        "Response line",
+                        "After line",
+                    ],
+                    "conditional": ["1", "1", "1", "1", "1", ""],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertEqual(output.count("<table>"), 2)
+        self.assertEqual(output.count("</table>"), 2)
+
+        conditional_start = output.find("<table>")
+        conditional_end = output.rfind("</table>")
+
+        self.assertLess(output.find("If Traveler"), conditional_start)
+        self.assertLess(conditional_start, output.find("Inside line"))
+        self.assertLess(output.find("Pick this"), conditional_end)
+        self.assertLess(output.find("Response line"), conditional_end)
+        self.assertLess(conditional_end, output.find("After line"))
+
     def test_russian_optional_dialogue_separates_different_speakers(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(

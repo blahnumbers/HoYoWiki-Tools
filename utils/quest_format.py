@@ -772,6 +772,8 @@ def format_dialogue(
     seen_dialogue_content = False
     pending_choice_speaker: str | None = None
     optional_last_speaker: str | None = None
+    current_conditional = ""
+    conditional_table_open = False
 
     if is_japanese and show_gendered_note:
         html_data += (
@@ -898,6 +900,44 @@ def format_dialogue(
                 target_language,
                 gender_mode or gender_mode_for(target_language),
             )
+
+        row_conditional = str(row.get("conditional", "") or "")
+        new_conditional = row_conditional != current_conditional
+
+        if new_conditional:
+            if current_conditional and conditional_table_open:
+                if "conditional" in opened_tags:
+                    while opened_tags:
+                        tag = opened_tags[-1]
+                        html_data += """
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    """
+                        opened_tags.pop()
+
+                        if tag == "conditional":
+                            break
+
+                conditional_table_open = False
+
+            current_conditional = row_conditional
+
+        if (
+            row_conditional
+            and not conditional_table_open
+            and not new_conditional
+            and row["type"] != "blank"
+        ):
+            html_data += """
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td colspan="1" rowspan="1">
+                    """
+            opened_tags.append("conditional")
+            conditional_table_open = True
 
         match row["type"]:
             case "description":
@@ -1382,7 +1422,7 @@ def format_dialogue(
     if opened_tags:
         for tag in reversed(opened_tags):
             match tag:
-                case "addopt" | "choice_branch" | "action":
+                case "addopt" | "choice_branch" | "action" | "conditional":
                     html_data += """
                                 </td>
                             </tr>
@@ -1969,9 +2009,20 @@ def _prepare_frame(dialogue_df: pd.DataFrame) -> pd.DataFrame:
     else:
         bold_values = pd.Series(False, index=range(len(frame)), dtype=bool)
 
+    if "conditional" in frame.columns:
+        conditional_values = (
+            frame["conditional"].fillna("").astype(str).reset_index(drop=True)
+        )
+    else:
+        conditional_values = None
+
     frame = frame[["header", "text"]].fillna("").astype(str)
     frame = frame.reset_index(drop=True)
     frame["bold"] = bold_values
+
+    if conditional_values is not None:
+        frame["conditional"] = conditional_values
+
     frame.insert(0, "type", "")
 
     return frame

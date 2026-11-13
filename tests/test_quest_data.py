@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 
 import pandas as pd
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Border, Font, Side
 
 from utils.quest_data import QuestDataError, parse_quest_file
 
@@ -281,7 +281,7 @@ class QuestDataParsingTests(unittest.TestCase):
         self.assertEqual(objective_df.dtypes.astype(str).tolist(), ["object", "object"])
         self.assertEqual(
             dialogue_df.dtypes.astype(str).tolist(),
-            ["object", "object", "bool"],
+            ["object", "object", "bool", "object"],
         )
 
     def test_accepts_singular_objectives_header_before_dialogue(self) -> None:
@@ -302,6 +302,54 @@ class QuestDataParsingTests(unittest.TestCase):
             [entry["key"] for entry in quest.dialogue_rows],
             ["Quest Objective", "Katheryne"],
         )
+
+    def test_parses_conditional_blocks_from_cell_borders(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Title", "Conditional Quest", "Условное задание"],
+            ["Dialogue"],
+            ["Paimon", "Before", "До"],
+            ["If Traveler has an invitation", "", ""],
+            ["Paimon", "Inside one", "Внутри один"],
+            ["Choice", "", ""],
+            ["1. Traveler", "Pick", "Выбор"],
+            ["Paimon", "Response", "Ответ"],
+            ["", "", ""],
+            ["Paimon", "Inside two", "Внутри два"],
+            ["Paimon", "After", "После"],
+        ]
+        path = self.directory / "conditional-blocks.xlsx"
+        workbook = Workbook()
+        worksheet = workbook.active
+
+        for row in rows:
+            worksheet.append(row)
+
+        medium = Side(style="medium")
+
+        for row_index in range(6, 12):
+            for column_index in (2, 3):
+                worksheet.cell(
+                    row = row_index,
+                    column = column_index,
+                ).border = Border(
+                    top = medium if row_index == 6 else None,
+                    bottom = medium if row_index == 11 else None,
+                )
+
+        workbook.save(path)
+        workbook.close()
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+        conditions = {
+            entry["row"]: entry["conditional"]
+            for entry in quest.dialogue_rows
+        }
+
+        self.assertEqual(conditions["5"], "1")
+        self.assertEqual(conditions["6"], "1")
+        self.assertEqual(conditions["11"], "1")
+        self.assertEqual(conditions["12"], "")
 
     def test_ignores_in_dialogue_objective_marker_as_section_header(self) -> None:
         rows = [
