@@ -856,6 +856,128 @@ class FormattingTests(unittest.TestCase):
         self.assertLess(output.find("Before"), output.find("Somewhere"))
         self.assertLess(output.find("Somewhere"), output.find("After"))
 
+    def test_mid_dialogue_location_gets_a_horizontal_rule(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Somewhere, Snezhnaya",
+                        "Paimon",
+                        "Elsewhere, Snezhnaya",
+                        "Paimon",
+                    ],
+                    "text": ["", "Before", "", "After"],
+                }
+            ),
+            location_keys = {
+                "Somewhere, Snezhnaya",
+                "Elsewhere, Snezhnaya",
+            },
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "EN",
+        )
+
+        self.assertEqual(output.count("<hr>"), 1)
+        self.assertLess(output.find("Somewhere"), output.find("<hr>"))
+        self.assertLess(output.find("<hr>"), output.find("Elsewhere"))
+        self.assertLess(output.find("Before"), output.find("<hr>"))
+
+    def test_opening_location_does_not_get_a_horizontal_rule(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Somewhere, Snezhnaya", "Paimon"],
+                    "text": ["", "Hello"],
+                }
+            ),
+            location_keys = {"Somewhere, Snezhnaya"},
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "EN",
+        )
+
+        self.assertNotIn("<hr>", output)
+
+    def test_russian_choice_separates_a_different_speaker_response(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Choice", "1. Traveler", "Paimon"],
+                    "text": ["", "Pick this", "Response line"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        segment = output[
+            output.find("Pick this"):output.find("Response line")
+        ]
+        self.assertIn("<p></p>", segment)
+
+    def test_russian_choice_keeps_same_speaker_response_tight(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Choice", "1. Traveler", "Traveler"],
+                    "text": ["", "Pick this", "Response line"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        segment = output[
+            output.find("Pick this"):output.find("Response line")
+        ]
+        self.assertNotIn("<p></p>", segment)
+
+    def test_english_choice_keeps_a_different_speaker_response_tight(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Choice", "1. Traveler", "Paimon"],
+                    "text": ["", "Pick this", "Response line"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "EN",
+        )
+
+        segment = output[
+            output.find("Pick this"):output.find("Response line")
+        ]
+        self.assertNotIn("<p></p>", segment)
+
     def test_description_order_is_unchanged_for_english(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(

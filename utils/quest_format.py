@@ -769,6 +769,8 @@ def format_dialogue(
 
     html_data = ""
     opened_tags: list[str] = []
+    seen_dialogue_content = False
+    pending_choice_speaker: str | None = None
 
     if is_japanese and show_gendered_note:
         html_data += (
@@ -1017,6 +1019,8 @@ def format_dialogue(
 
                 continue
             case "choice_branch":
+                seen_dialogue_content = True
+
                 match language_preset:
                     case "CHS":
                         choice_content = _wrap_with_base_color(
@@ -1085,7 +1089,13 @@ def format_dialogue(
 
                     if is_japanese:
                         jp_choice_open = True
+
+                if output_language == "RU":
+                    pending_choice_speaker = header
             case "location":
+                if seen_dialogue_content:
+                    html_data += "<hr>"
+
                 match language_preset:
                     case "EN":
                         location_content = _wrap_with_base_color(
@@ -1116,8 +1126,20 @@ def format_dialogue(
                         <p><span style="color: rgb(236, 229, 216);">%s</span></p>
                         """ % header
             case "dialogue":
+                seen_dialogue_content = True
+
                 if last_row_type == "objective" and not is_korean:
                     html_data += "<p></p>"
+
+                if pending_choice_speaker is not None:
+                    if (
+                        output_language == "RU"
+                        and "choice_branch" in opened_tags
+                        and header != pending_choice_speaker
+                    ):
+                        html_data += "<p></p>"
+
+                    pending_choice_speaker = None
 
                 is_traveler_speaker = is_japanese and (
                     "Traveler" in header
@@ -1231,6 +1253,8 @@ def format_dialogue(
 
                 html_data += "<p><em>%s</em></p>" % header
             case "action":
+                seen_dialogue_content = True
+
                 action_text = (
                     "<strong>%s</strong>" % text
                     if bool(row.get("bold", False))
