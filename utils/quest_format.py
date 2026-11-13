@@ -771,6 +771,7 @@ def format_dialogue(
     opened_tags: list[str] = []
     seen_dialogue_content = False
     pending_choice_speaker: str | None = None
+    optional_last_speaker: str | None = None
 
     if is_japanese and show_gendered_note:
         html_data += (
@@ -980,6 +981,7 @@ def format_dialogue(
             case "missing":
                 continue
             case "addopt":
+                optional_last_speaker = None
                 optional_header = header
 
                 if language_preset == "CHS":
@@ -1140,6 +1142,19 @@ def format_dialogue(
                         html_data += "<p></p>"
 
                     pending_choice_speaker = None
+
+                if "addopt" in opened_tags:
+                    if (
+                        output_language == "RU"
+                        and "choice_branch" not in opened_tags
+                        and optional_last_speaker is not None
+                        and header != optional_last_speaker
+                    ):
+                        html_data += "<p></p>"
+
+                    optional_last_speaker = header
+                else:
+                    optional_last_speaker = None
 
                 is_traveler_speaker = is_japanese and (
                     "Traveler" in header

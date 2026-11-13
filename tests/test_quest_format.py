@@ -979,6 +979,87 @@ class FormattingTests(unittest.TestCase):
         ]
         self.assertNotIn("<p></p>", segment)
 
+    def test_russian_optional_dialogue_separates_different_speakers(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Optional Dialogue: Talk to Someone",
+                        "Paimon",
+                        "Alyosha",
+                    ],
+                    "text": ["", "First line", "Second line"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        segment = output[
+            output.find("First line"):output.find("Second line")
+        ]
+        self.assertIn("<p></p>", segment)
+
+    def test_russian_optional_dialogue_keeps_same_speaker_tight(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Optional Dialogue: Talk to Someone",
+                        "Paimon",
+                        "Paimon",
+                    ],
+                    "text": ["", "First line", "Second line"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        segment = output[
+            output.find("First line"):output.find("Second line")
+        ]
+        self.assertNotIn("<p></p>", segment)
+
+    def test_english_optional_dialogue_keeps_speakers_tight(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Optional Dialogue: Talk to Someone",
+                        "Paimon",
+                        "Alyosha",
+                    ],
+                    "text": ["", "First line", "Second line"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "EN",
+        )
+
+        segment = output[
+            output.find("First line"):output.find("Second line")
+        ]
+        self.assertNotIn("<p></p>", segment)
+
     def test_description_order_is_unchanged_for_english(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
