@@ -1094,7 +1094,7 @@ def format_dialogue(
                     pending_choice_speaker = header
             case "location":
                 if seen_dialogue_content:
-                    html_data += "<hr>"
+                    html_data += "<hr><p></p>"
 
                 match language_preset:
                     case "EN":

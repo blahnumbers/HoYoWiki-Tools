@@ -884,6 +884,7 @@ class FormattingTests(unittest.TestCase):
         )
 
         self.assertEqual(output.count("<hr>"), 1)
+        self.assertIn("<hr><p></p>", output)
         self.assertLess(output.find("Somewhere"), output.find("<hr>"))
         self.assertLess(output.find("<hr>"), output.find("Elsewhere"))
         self.assertLess(output.find("Before"), output.find("<hr>"))
