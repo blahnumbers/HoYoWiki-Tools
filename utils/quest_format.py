@@ -906,6 +906,15 @@ def format_dialogue(
 
         if new_conditional:
             if current_conditional and conditional_table_open:
+                if kr_meta_table_open:
+                    html_data += """
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            """
+                    kr_meta_table_open = False
+
                 if "conditional" in opened_tags:
                     while opened_tags:
                         tag = opened_tags[-1]
@@ -917,9 +926,13 @@ def format_dialogue(
                     """
                         opened_tags.pop()
 
+                        if tag == "choice_branch":
+                            jp_choice_open = False
+
                         if tag == "conditional":
                             break
 
+                jp_choice_open = False
                 conditional_table_open = False
 
             current_conditional = row_conditional

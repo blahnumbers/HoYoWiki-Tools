@@ -351,6 +351,74 @@ class QuestDataParsingTests(unittest.TestCase):
         self.assertEqual(conditions["11"], "1")
         self.assertEqual(conditions["12"], "")
 
+    def test_conditional_block_uses_matching_outer_border_style(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Title", "Conditional Quest", "Условное задание"],
+            ["Dialogue"],
+            ["Paimon", "Before", "До"],
+            ["(If the quest is active)", "", ""],
+            ["Paimon", "Inside one", "Внутри один"],
+            ["Choice", "", ""],
+            ["1. Traveler", "Pick one", "Выбор один"],
+            ["Paimon", "Response one", "Ответ один"],
+            ["2. Traveler", "Pick two", "Выбор два"],
+            ["Paimon", "Response two", "Ответ два"],
+            ["", "", ""],
+            ["(If the quest is complete)", "", ""],
+            ["Paimon", "Other branch", "Другая ветка"],
+        ]
+        path = self.directory / "conditional-outer-border.xlsx"
+        workbook = Workbook()
+        worksheet = workbook.active
+
+        for row in rows:
+            worksheet.append(row)
+
+        thin = Side(style="thin")
+        medium = Side(style="medium")
+
+        for column_index in (2, 3):
+            worksheet.cell(
+                row = 6,
+                column = column_index,
+            ).border = Border(top = thin)
+            worksheet.cell(
+                row = 12,
+                column = column_index,
+            ).border = Border(bottom = thin)
+            worksheet.cell(
+                row = 8,
+                column = column_index,
+            ).border = Border(top = medium)
+            worksheet.cell(
+                row = 9,
+                column = column_index,
+            ).border = Border(bottom = medium)
+            worksheet.cell(
+                row = 10,
+                column = column_index,
+            ).border = Border(top = medium)
+            worksheet.cell(
+                row = 11,
+                column = column_index,
+            ).border = Border(bottom = medium)
+
+        workbook.save(path)
+        workbook.close()
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+        conditions = {
+            entry["row"]: entry["conditional"]
+            for entry in quest.dialogue_rows
+        }
+
+        self.assertEqual(conditions["5"], "1")
+        self.assertEqual(conditions["6"], "1")
+        self.assertEqual(conditions["12"], "1")
+        self.assertEqual(conditions["13"], "")
+        self.assertEqual(conditions["14"], "")
+
     def test_ignores_in_dialogue_objective_marker_as_section_header(self) -> None:
         rows = [
             [" ", "EN", "RU"],

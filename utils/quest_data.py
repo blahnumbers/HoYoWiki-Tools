@@ -52,10 +52,9 @@ LANGUAGE_CODE_RE = re.compile(r"^[A-Z]{2,3}(?:[-_][A-Z]{2,4})?$")
 OBJECTIVE_KEY_RE = re.compile(r"^\d+(?:\.0+)?$")
 NAME_WHITESPACE_RE = re.compile(r"\s+")
 CONDITIONAL_HEADER_RE = re.compile(
-    r"^\s*(?:\(|（|If\b|When\b|After\b|Before\b|Unless\b|While\b)",
+    r"^\s*[\(（]?\s*(?:If|When|After|Before|Unless|While)\b",
     re.IGNORECASE,
 )
-CONDITIONAL_BORDER_STYLES = frozenset({"medium", "thick"})
 
 TRANSLATION_SEGMENT_KEYS = {
     "special speaker": "special_speakers",
@@ -340,7 +339,7 @@ def _read_conditional_blocks(
     language_columns: dict[str, int],
     row_count: int,
 ) -> dict[int, str]:
-    """Return sheet rows grouped by medium-bordered conditional blocks."""
+    """Group rows between condition headers using their cell border range."""
 
     suffix = Path(file_name).suffix.lower()
 
@@ -362,36 +361,70 @@ def _read_conditional_blocks(
         if border_column is None:
             return {}
 
+        header_rows = [
+            row_index
+            for row_index in range(row_count)
+            if _is_conditional_header(
+                worksheet, row_index, language_columns
+            )
+        ]
         blocks: dict[int, str] = {}
         block_id = 0
-        start: int | None = None
 
-        for row_index in range(row_count):
-            cell = worksheet.cell(
-                row = row_index + 1,
-                column = border_column + 1,
+        for header_position, header_index in enumerate(header_rows):
+            next_header = (
+                header_rows[header_position + 1]
+                if header_position + 1 < len(header_rows)
+                else row_count
             )
-            top = cell.border.top.style if cell.border.top else None
-            bottom = cell.border.bottom.style if cell.border.bottom else None
+            start: int | None = None
+            outer_style: str | None = None
+            end: int | None = None
 
-            if top in CONDITIONAL_BORDER_STYLES:
-                start = row_index
+            for row_index in range(header_index + 1, next_header):
+                cell = worksheet.cell(
+                    row = row_index + 1,
+                    column = border_column + 1,
+                )
+                top = cell.border.top.style if cell.border.top else None
+                bottom = (
+                    cell.border.bottom.style if cell.border.bottom else None
+                )
 
-            if start is None or bottom not in CONDITIONAL_BORDER_STYLES:
+                if start is None and top:
+                    start = row_index
+                    outer_style = top
+
+                if start is not None and bottom == outer_style:
+                    end = row_index
+                    break
+
+            if (
+                start is None
+                or end is None
+                or end < start
+                or start - header_index > 3
+            ):
                 continue
 
-            end = row_index
-            header_index = start - 1
+            has_content = any(
+                _cell_text(
+                    worksheet.cell(
+                        row = row_index + 1,
+                        column = column_index + 1,
+                    ).value
+                ).strip()
+                for row_index in range(start, end + 1)
+                for column_index in language_columns.values()
+            )
 
-            if header_index >= 0 and _is_conditional_header(
-                worksheet, header_index, language_columns
-            ):
-                block_id += 1
+            if not has_content:
+                continue
 
-                for block_row in range(header_index, end + 1):
-                    blocks[block_row] = str(block_id)
+            block_id += 1
 
-            start = None
+            for block_row in range(header_index, end + 1):
+                blocks[block_row] = str(block_id)
 
         return blocks
     finally:
