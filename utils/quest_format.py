@@ -732,6 +732,18 @@ def _order_leading_location_first(
     return pd.DataFrame([row for _, row in rows]).reset_index(drop = True)
 
 
+def _append_blank_paragraph(html_data: str) -> str:
+    """Append an empty paragraph unless the output already ends with one."""
+
+    if not html_data.strip():
+        return html_data
+
+    if html_data.rstrip().endswith("<p></p>"):
+        return html_data
+
+    return html_data + "<p></p>"
+
+
 def format_dialogue(
     classified_dialogue_df: pd.DataFrame,
     preset: str = "EN",
@@ -1019,6 +1031,9 @@ def format_dialogue(
                     opened_tags.remove("choice_branch")
                     opened_tags.reverse()
 
+                if output_language == "RU":
+                    html_data = _append_blank_paragraph(html_data)
+
                 continue
             case "choice_branch":
                 seen_dialogue_content = True
@@ -1078,6 +1093,9 @@ def format_dialogue(
 
                         opened_tags.remove("choice_branch")
                         opened_tags.reverse()
+
+                    if output_language == "RU":
+                        html_data = _append_blank_paragraph(html_data)
 
                     html_data += """
                         <table>
@@ -1263,6 +1281,9 @@ def format_dialogue(
                     opened_tags.remove("choice_branch")
                     opened_tags.reverse()
 
+                    if output_language == "RU":
+                        html_data = _append_blank_paragraph(html_data)
+
                 if last_row_type == "objective":
                     html_data += "<p></p>"
 
@@ -1329,7 +1350,9 @@ def format_dialogue(
                     continue
 
                 if opened_tags and next_row_type != "choice_flag":
-                    match opened_tags[-1]:
+                    closed_tag = opened_tags[-1]
+
+                    match closed_tag:
                         case "addopt" | "choice_branch" | "action":
                             html_data += """
                                         </td>
@@ -1339,6 +1362,9 @@ def format_dialogue(
                             """
 
                             opened_tags.pop()
+                            choice_table_closed = closed_tag == "choice_branch"
+                else:
+                    choice_table_closed = False
 
                 add_spacing = next_row_type != "choice_branch"
 
@@ -1368,6 +1394,10 @@ def format_dialogue(
                     ):
                         add_spacing = False
 
+                if output_language == "RU" and choice_table_closed:
+                    html_data = _append_blank_paragraph(html_data)
+                    add_spacing = False
+
                 if add_spacing:
                     html_data += "<p></p>"
 
@@ -1391,6 +1421,9 @@ def format_dialogue(
                     """
 
                     opened_tags.pop()
+
+                    if output_language == "RU" and tag == "choice_branch":
+                        html_data = _append_blank_paragraph(html_data)
 
     return html_data
 
