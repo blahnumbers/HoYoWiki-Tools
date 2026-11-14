@@ -147,6 +147,94 @@ INPUT_CONTEXT_SCRIPT = """
 """
 
 
+GLOBAL_DROP_SCRIPT = """
+<script>
+(function() {
+    const parentWindow = window.parent;
+    const doc = parentWindow.document;
+
+    if (parentWindow.__questFormatterDropInstalled) {
+        return;
+    }
+
+    parentWindow.__questFormatterDropInstalled = true;
+
+    function findInput() {
+        return doc.querySelector(
+            '[data-testid="stFileUploader"] input[type="file"]'
+        );
+    }
+
+    function isFileDrag(event) {
+        return (
+            event.dataTransfer
+            && Array.from(event.dataTransfer.types).includes('Files')
+        );
+    }
+
+    function upload(files) {
+        const input = findInput();
+
+        if (!input || !files || !files.length) {
+            return;
+        }
+
+        const transfer = new DataTransfer();
+
+        for (const file of files) {
+            transfer.items.add(file);
+        }
+
+        const setter = Object.getOwnPropertyDescriptor(
+            HTMLInputElement.prototype,
+            'files'
+        )?.set;
+
+        if (setter) {
+            setter.call(input, transfer.files);
+        } else {
+            input.files = transfer.files;
+        }
+
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    doc.addEventListener('dragover', (event) => {
+        if (!isFileDrag(event) || !findInput()) {
+            return;
+        }
+
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+    }, true);
+
+    doc.addEventListener('drop', (event) => {
+        if (!isFileDrag(event) || !findInput()) {
+            return;
+        }
+
+        const target = event.target;
+
+        if (
+            target
+            && target.closest
+            && target.closest('[data-testid="stFileUploader"]')
+        ) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (event.dataTransfer && event.dataTransfer.files.length) {
+            upload(event.dataTransfer.files);
+        }
+    }, true);
+})();
+</script>
+"""
+
+
 @st.cache_data(show_spinner=False)
 def _parse_uploaded(
     file_bytes: bytes,
@@ -505,6 +593,8 @@ def _render_import_mode() -> None:
             "Field Label blocks."
         ),
     )
+
+    components.html(GLOBAL_DROP_SCRIPT, height = 0)
 
     if imported_file is None:
         st.info(

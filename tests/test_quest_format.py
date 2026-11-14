@@ -1088,6 +1088,39 @@ class FormattingTests(unittest.TestCase):
         between = output[output.find("Pick one"):output.find("Pick two")]
         self.assertNotIn("<p></p>", between)
 
+    def test_optional_header_does_not_create_an_empty_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Optional dialogue - before starting the quest",
+                        "",
+                        "1 starting location",
+                        "Somewhere, Snezhnaya",
+                        "Paimon",
+                    ],
+                    "text": ["", "", "", "", "Hello"],
+                }
+            ),
+            location_keys = {"Somewhere, Snezhnaya"},
+            target_language = "RU",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertIn(
+            "<p>Optional dialogue - before starting the quest</p>",
+            output,
+        )
+        self.assertNotIn("<table>", output)
+        self.assertIn("<em>1 starting location</em>", output)
+
     def test_conditional_block_wraps_its_choices_in_one_table(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(

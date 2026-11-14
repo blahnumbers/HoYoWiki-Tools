@@ -806,6 +806,7 @@ def format_dialogue(
     seen_dialogue_content = False
     pending_choice_speaker: str | None = None
     optional_last_speaker: str | None = None
+    pending_optional_header: str | None = None
     current_conditional = ""
     conditional_table_open = False
     conditional_last_speaker: str | None = None
@@ -994,6 +995,15 @@ def format_dialogue(
             conditional_table_open = True
             conditional_last_speaker = None
 
+        if pending_optional_header is not None and row["type"] in {
+            "description",
+            "objective",
+            "location",
+            "sub_mission",
+            "missing",
+        }:
+            pending_optional_header = None
+
         match row["type"]:
             case "description":
                 if language_preset == "KR":
@@ -1080,9 +1090,23 @@ def format_dialogue(
                 optional_header = header
 
                 if output_language == "RU":
-                    html_data = _ensure_nested_table_gap(
-                        html_data, opened_tags
-                    )
+                    if "addopt" in opened_tags:
+                        while opened_tags:
+                            tag = opened_tags[-1]
+                            html_data += """
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            """
+                            opened_tags.pop()
+
+                            if tag == "addopt":
+                                break
+
+                    html_data += "<p>%s</p>" % optional_header
+                    pending_optional_header = optional_header
+                    continue
 
                 if language_preset == "CHS":
                     optional_header = _use_fullwidth_colon(optional_header)
@@ -1121,6 +1145,18 @@ def format_dialogue(
 
                 continue
             case "choice_branch":
+                if pending_optional_header is not None:
+                    if output_language == "RU":
+                        html_data += """
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td colspan="1" rowspan="1">
+                    """
+                        opened_tags.append("addopt")
+
+                    pending_optional_header = None
+
                 seen_dialogue_content = True
 
                 match language_preset:
@@ -1233,6 +1269,18 @@ def format_dialogue(
                         <p><span style="color: rgb(236, 229, 216);">%s</span></p>
                         """ % header
             case "dialogue":
+                if pending_optional_header is not None:
+                    if output_language == "RU":
+                        html_data += """
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td colspan="1" rowspan="1">
+                    """
+                        opened_tags.append("addopt")
+
+                    pending_optional_header = None
+
                 seen_dialogue_content = True
 
                 if last_row_type == "objective" and not is_korean:
@@ -1387,6 +1435,18 @@ def format_dialogue(
 
                 html_data += "<p><em>%s</em></p>" % header
             case "action":
+                if pending_optional_header is not None:
+                    if output_language == "RU":
+                        html_data += """
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td colspan="1" rowspan="1">
+                    """
+                        opened_tags.append("addopt")
+
+                    pending_optional_header = None
+
                 seen_dialogue_content = True
 
                 action_text = (
