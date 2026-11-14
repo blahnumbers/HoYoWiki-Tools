@@ -56,6 +56,7 @@ CONDITIONAL_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 OPTIONAL_HEADER_KEYWORDS = ("optional", "additional", "alternative")
+CHOICE_PREFIX_RE = re.compile(r"^(?:\d+\.)+\s+")
 
 TRANSLATION_SEGMENT_KEYS = {
     "special speaker": "special_speakers",
@@ -401,6 +402,9 @@ def _read_conditional_blocks(
                 )
 
                 if start is None and top:
+                    if _is_choice_row(worksheet, row_index):
+                        break
+
                     start = row_index
                     outer_style = top
 
@@ -464,6 +468,17 @@ def _is_conditional_header(
     return True
 
 
+def _is_choice_row(
+    worksheet: openpyxl.worksheet.worksheet.Worksheet,
+    row_index: int,
+) -> bool:
+    key = _cell_text(
+        worksheet.cell(row = row_index + 1, column = 1).value
+    ).strip()
+
+    return bool(CHOICE_PREFIX_RE.match(key))
+
+
 def _read_optional_blocks(
     file_bytes: bytes,
     file_name: str,
@@ -513,7 +528,11 @@ def _read_optional_blocks(
                 border_column,
             )
 
-            if start is None or outer_style is None:
+            if (
+                start is None
+                or outer_style is None
+                or _is_choice_row(worksheet, start)
+            ):
                 continue
 
             end = _matching_bottom_border(
@@ -647,6 +666,9 @@ def _next_block_start(
         top = cell.border.top.style if cell.border.top else None
 
         if top:
+            if _is_choice_row(worksheet, row_index):
+                return None, None
+
             return row_index, top
 
         if not _is_section_or_blank(

@@ -478,6 +478,52 @@ class QuestDataParsingTests(unittest.TestCase):
         self.assertEqual(optional["13"], "2")
         self.assertEqual(optional["14"], "")
 
+    def test_choice_borders_do_not_create_a_conditional_block(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Title", "Choice Quest", "Задание с выбором"],
+            ["Dialogue"],
+            ["Paimon", "Before", "До"],
+            ["(If Traveler has met someone before)", "", ""],
+            ["", "", ""],
+            ["Choice", "", ""],
+            ["1.1. Traveler", "Pick one", "Выбор один"],
+            ["The Anvil", "Response one", "Ответ один"],
+            ["1.2. Traveler", "Pick two", "Выбор два"],
+            ["The Anvil", "Response two", "Ответ два"],
+            ["", "", ""],
+        ]
+        path = self.directory / "choice-borders.xlsx"
+        workbook = Workbook()
+        worksheet = workbook.active
+
+        for row in rows:
+            worksheet.append(row)
+
+        thin = Side(style="thin")
+
+        for column_index in (2, 3):
+            worksheet.cell(
+                row = 8,
+                column = column_index,
+            ).border = Border(top = thin)
+            worksheet.cell(
+                row = 9,
+                column = column_index,
+            ).border = Border(bottom = thin)
+
+        workbook.save(path)
+        workbook.close()
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+        conditions = {
+            entry["row"]: entry["conditional"]
+            for entry in quest.dialogue_rows
+        }
+
+        for row_number in ("5", "6", "7", "8", "9", "10", "11"):
+            self.assertEqual(conditions[row_number], "")
+
     def test_ignores_in_dialogue_objective_marker_as_section_header(self) -> None:
         rows = [
             [" ", "EN", "RU"],
