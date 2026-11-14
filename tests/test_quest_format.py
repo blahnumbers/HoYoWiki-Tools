@@ -979,6 +979,115 @@ class FormattingTests(unittest.TestCase):
         ]
         self.assertNotIn("<p></p>", segment)
 
+    def test_condition_header_with_comma_is_not_a_location(self) -> None:
+        header = (
+            'If "On One Side a Palace, On the Other a Tomb" '
+            "quest is not completed"
+        )
+
+        self.assertEqual(quest_format.classify_row(header, ""), "sub_mission")
+
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [header, "Paimon"],
+                    "text": ["", "Line"],
+                    "conditional": ["1", "1"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertIn("<em>%s</em>" % header, output)
+        self.assertNotIn("<strong>%s</strong>" % header, output)
+
+    def test_conditional_dialogue_separates_different_speakers(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "If the quest is active",
+                        "Paimon",
+                        "Traveler",
+                        "Paimon",
+                    ],
+                    "text": ["", "One", "Two", "Three"],
+                    "conditional": ["1", "1", "1", "1"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertIn("<p></p>", output[output.find("One"):output.find("Two")])
+        self.assertIn(
+            "<p></p>",
+            output[output.find("Two"):output.find("Three")],
+        )
+
+    def test_nested_choice_tables_get_a_gap_inside_a_conditional_block(
+        self,
+    ) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "If the quest is active",
+                        "Choice",
+                        "1. Traveler",
+                        "2. Traveler",
+                    ],
+                    "text": ["", "", "Pick one", "Pick two"],
+                    "conditional": ["1", "1", "1", "1"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        between = output[output.find("Pick one"):output.find("Pick two")]
+        self.assertIn("<p></p>", between)
+
+    def test_top_level_choice_tables_keep_default_spacing(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Choice", "1. Traveler", "2. Traveler"],
+                    "text": ["", "Pick one", "Pick two"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        between = output[output.find("Pick one"):output.find("Pick two")]
+        self.assertNotIn("<p></p>", between)
+
     def test_conditional_block_wraps_its_choices_in_one_table(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(

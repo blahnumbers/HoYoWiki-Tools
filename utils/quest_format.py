@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from utils.quest_data import normalize_name
+from utils.quest_data import CONDITIONAL_HEADER_RE, normalize_name
 
 # Used by the page to detect a module left behind by a hot reload.
 with open(__file__, "rb") as _source_file:
@@ -196,6 +196,11 @@ def classify_row(header: str, text: str) -> str:
     # this before the comma rule so "(If you talked to X, ...)" is not
     # mistaken for a location.
     if header.startswith(("(", "（")):
+        return "sub_mission"
+
+    # Unparenthesised condition headers can contain commas inside quoted
+    # quest names, so they must be checked before the location rule too.
+    if CONDITIONAL_HEADER_RE.match(header):
         return "sub_mission"
 
     if "," in header:
@@ -732,6 +737,35 @@ def _order_leading_location_first(
     return pd.DataFrame([row for _, row in rows]).reset_index(drop = True)
 
 
+def _append_blank_paragraph(html_data: str) -> str:
+    """Append an empty paragraph unless one is already at the end."""
+
+    if html_data.rstrip().endswith("<p></p>"):
+        return html_data
+
+    return html_data + "<p></p>"
+
+
+def _ensure_nested_table_gap(
+    html_data: str,
+    opened_tags: list[str],
+) -> str:
+    """Keep consecutive nested tables from touching inside an outer table."""
+
+    if not opened_tags:
+        return html_data
+
+    stripped = html_data.rstrip()
+
+    if stripped.endswith("<p></p>") or stripped.endswith("<br>"):
+        return html_data
+
+    if stripped.endswith("</table>"):
+        return html_data + "<p></p>"
+
+    return html_data
+
+
 def format_dialogue(
     classified_dialogue_df: pd.DataFrame,
     preset: str = "EN",
@@ -774,6 +808,7 @@ def format_dialogue(
     optional_last_speaker: str | None = None
     current_conditional = ""
     conditional_table_open = False
+    conditional_last_speaker: str | None = None
 
     if is_japanese and show_gendered_note:
         html_data += (
@@ -934,6 +969,7 @@ def format_dialogue(
 
                 jp_choice_open = False
                 conditional_table_open = False
+                conditional_last_speaker = None
 
             current_conditional = row_conditional
 
@@ -943,6 +979,11 @@ def format_dialogue(
             and not new_conditional
             and row["type"] != "blank"
         ):
+            if output_language == "RU":
+                html_data = _ensure_nested_table_gap(
+                    html_data, opened_tags
+                )
+
             html_data += """
                     <table>
                         <tbody>
@@ -951,6 +992,7 @@ def format_dialogue(
                     """
             opened_tags.append("conditional")
             conditional_table_open = True
+            conditional_last_speaker = None
 
         match row["type"]:
             case "description":
@@ -1036,6 +1078,11 @@ def format_dialogue(
             case "addopt":
                 optional_last_speaker = None
                 optional_header = header
+
+                if output_language == "RU":
+                    html_data = _ensure_nested_table_gap(
+                        html_data, opened_tags
+                    )
 
                 if language_preset == "CHS":
                     optional_header = _use_fullwidth_colon(optional_header)
@@ -1132,6 +1179,11 @@ def format_dialogue(
                         opened_tags.remove("choice_branch")
                         opened_tags.reverse()
 
+                    if output_language == "RU":
+                        html_data = _ensure_nested_table_gap(
+                            html_data, opened_tags
+                        )
+
                     html_data += """
                         <table>
                             <tbody>
@@ -1192,7 +1244,7 @@ def format_dialogue(
                         and "choice_branch" in opened_tags
                         and header != pending_choice_speaker
                     ):
-                        html_data += "<p></p>"
+                        html_data = _append_blank_paragraph(html_data)
 
                     pending_choice_speaker = None
 
@@ -1203,11 +1255,25 @@ def format_dialogue(
                         and optional_last_speaker is not None
                         and header != optional_last_speaker
                     ):
-                        html_data += "<p></p>"
+                        html_data = _append_blank_paragraph(html_data)
 
                     optional_last_speaker = header
                 else:
                     optional_last_speaker = None
+
+                if "conditional" in opened_tags:
+                    if (
+                        output_language == "RU"
+                        and "choice_branch" not in opened_tags
+                        and "addopt" not in opened_tags
+                        and conditional_last_speaker is not None
+                        and header != conditional_last_speaker
+                    ):
+                        html_data = _append_blank_paragraph(html_data)
+
+                    conditional_last_speaker = header
+                else:
+                    conditional_last_speaker = None
 
                 is_traveler_speaker = is_japanese and (
                     "Traveler" in header
