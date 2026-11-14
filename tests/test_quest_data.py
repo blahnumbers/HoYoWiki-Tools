@@ -281,7 +281,7 @@ class QuestDataParsingTests(unittest.TestCase):
         self.assertEqual(objective_df.dtypes.astype(str).tolist(), ["object", "object"])
         self.assertEqual(
             dialogue_df.dtypes.astype(str).tolist(),
-            ["object", "object", "bool", "object"],
+            ["object", "object", "bool", "object", "object"],
         )
 
     def test_accepts_singular_objectives_header_before_dialogue(self) -> None:
@@ -418,6 +418,65 @@ class QuestDataParsingTests(unittest.TestCase):
         self.assertEqual(conditions["12"], "1")
         self.assertEqual(conditions["13"], "")
         self.assertEqual(conditions["14"], "")
+
+    def test_parses_optional_blocks_from_cell_borders(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Title", "Optional Quest", "Опциональное задание"],
+            ["Dialogue"],
+            ["Optional dialogue - before starting the quest", "", ""],
+            ["", "", ""],
+            ["1 starting location", "", ""],
+            ["Somewhere, Snezhnaya", "", ""],
+            ["Paimon", "Inside one", "Внутри один"],
+            ["", "", ""],
+            ["2 starting location", "", ""],
+            ["Elsewhere, Snezhnaya", "", ""],
+            ["Paimon", "Inside two", "Внутри два"],
+            ["", "", ""],
+            ["Paimon", "After", "После"],
+        ]
+        path = self.directory / "optional-blocks.xlsx"
+        workbook = Workbook()
+        worksheet = workbook.active
+
+        for row in rows:
+            worksheet.append(row)
+
+        thin = Side(style="thin")
+
+        for column_index in (2, 3):
+            worksheet.cell(
+                row = 7,
+                column = column_index,
+            ).border = Border(top = thin)
+            worksheet.cell(
+                row = 9,
+                column = column_index,
+            ).border = Border(bottom = thin)
+            worksheet.cell(
+                row = 11,
+                column = column_index,
+            ).border = Border(top = thin)
+            worksheet.cell(
+                row = 13,
+                column = column_index,
+            ).border = Border(bottom = thin)
+
+        workbook.save(path)
+        workbook.close()
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+        optional = {
+            entry["row"]: entry["optional"]
+            for entry in quest.dialogue_rows
+        }
+
+        self.assertEqual(optional["7"], "1")
+        self.assertEqual(optional["9"], "1")
+        self.assertEqual(optional["11"], "2")
+        self.assertEqual(optional["13"], "2")
+        self.assertEqual(optional["14"], "")
 
     def test_ignores_in_dialogue_objective_marker_as_section_header(self) -> None:
         rows = [

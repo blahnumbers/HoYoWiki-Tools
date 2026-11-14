@@ -810,6 +810,8 @@ def format_dialogue(
     current_conditional = ""
     conditional_table_open = False
     conditional_last_speaker: str | None = None
+    current_optional_block = ""
+    optional_block_open = False
 
     if is_japanese and show_gendered_note:
         html_data += (
@@ -936,6 +938,55 @@ def format_dialogue(
                 target_language,
                 gender_mode or gender_mode_for(target_language),
             )
+
+        row_optional = str(row.get("optional", "") or "")
+        new_optional = row_optional != current_optional_block
+
+        if new_optional:
+            if current_optional_block and optional_block_open:
+                if kr_meta_table_open:
+                    html_data += """
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            """
+                    kr_meta_table_open = False
+
+                if "addopt" in opened_tags:
+                    while opened_tags:
+                        tag = opened_tags[-1]
+                        html_data += """
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            """
+                        opened_tags.pop()
+
+                        if tag == "choice_branch":
+                            jp_choice_open = False
+
+                        if tag == "addopt":
+                            break
+
+                jp_choice_open = False
+                optional_block_open = False
+                optional_last_speaker = None
+
+            current_optional_block = row_optional
+
+        if row_optional and not optional_block_open:
+            html_data += """
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td colspan="1" rowspan="1">
+                    """
+            opened_tags.append("addopt")
+            optional_block_open = True
+            optional_last_speaker = None
+            pending_optional_header = None
 
         row_conditional = str(row.get("conditional", "") or "")
         new_conditional = row_conditional != current_conditional
@@ -1236,7 +1287,9 @@ def format_dialogue(
                 if output_language == "RU":
                     pending_choice_speaker = header
             case "location":
-                if seen_dialogue_content:
+                if seen_dialogue_content and not (
+                    row_optional and new_optional
+                ):
                     html_data += "<hr><p></p>"
 
                 match language_preset:
@@ -1508,16 +1561,23 @@ def format_dialogue(
                     continue
 
                 if opened_tags and next_row_type != "choice_flag":
-                    match opened_tags[-1]:
-                        case "addopt" | "choice_branch" | "action":
-                            html_data += """
+                    last_tag = opened_tags[-1]
+
+                    if not (
+                        last_tag == "addopt"
+                        and optional_block_open
+                        and row_optional
+                    ):
+                        match last_tag:
+                            case "addopt" | "choice_branch" | "action":
+                                html_data += """
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
                             """
 
-                            opened_tags.pop()
+                                opened_tags.pop()
 
                 add_spacing = next_row_type != "choice_branch"
 
@@ -2155,12 +2215,22 @@ def _prepare_frame(dialogue_df: pd.DataFrame) -> pd.DataFrame:
     else:
         conditional_values = None
 
+    if "optional" in frame.columns:
+        optional_values = (
+            frame["optional"].fillna("").astype(str).reset_index(drop=True)
+        )
+    else:
+        optional_values = None
+
     frame = frame[["header", "text"]].fillna("").astype(str)
     frame = frame.reset_index(drop=True)
     frame["bold"] = bold_values
 
     if conditional_values is not None:
         frame["conditional"] = conditional_values
+
+    if optional_values is not None:
+        frame["optional"] = optional_values
 
     frame.insert(0, "type", "")
 

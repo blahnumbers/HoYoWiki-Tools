@@ -55,6 +55,7 @@ CONDITIONAL_HEADER_RE = re.compile(
     r"^\s*[\(（]?\s*(?:If|When|After|Before|Unless|While)\b",
     re.IGNORECASE,
 )
+OPTIONAL_HEADER_KEYWORDS = ("optional", "additional", "alternative")
 
 TRANSLATION_SEGMENT_KEYS = {
     "special speaker": "special_speakers",
@@ -148,6 +149,10 @@ class QuestData:
                 ),
                 "conditional": pd.Series(
                     [entry.get("conditional", "") for entry in entries],
+                    dtype = str,
+                ),
+                "optional": pd.Series(
+                    [entry.get("optional", "") for entry in entries],
                     dtype = str,
                 ),
             }
@@ -274,6 +279,9 @@ def parse_quest_file(file_bytes: bytes, file_name: str) -> QuestData:
     conditional_blocks = _read_conditional_blocks(
         file_bytes, file_name, language_columns, len(rows)
     )
+    optional_blocks = _read_optional_blocks(
+        file_bytes, file_name, language_columns, len(rows)
+    )
     dialogue_rows, dialogue_bold = _parse_dialogue_rows(
         rows,
         language_columns,
@@ -281,6 +289,7 @@ def parse_quest_file(file_bytes: bytes, file_name: str) -> QuestData:
         excluded_rows,
         bold_cells,
         conditional_blocks,
+        optional_blocks,
     )
     titles = _parse_title(rows, language_columns, language_row_index)
 
@@ -443,6 +452,216 @@ def _is_conditional_header(
     if not header or not CONDITIONAL_HEADER_RE.match(header):
         return False
 
+    for column_index in language_columns.values():
+        if _cell_text(
+            worksheet.cell(
+                row = row_index + 1,
+                column = column_index + 1,
+            ).value
+        ).strip():
+            return False
+
+    return True
+
+
+def _read_optional_blocks(
+    file_bytes: bytes,
+    file_name: str,
+    language_columns: dict[str, int],
+    row_count: int,
+) -> dict[int, str]:
+    """Group bordered optional dialogue ranges under optional headers."""
+
+    suffix = Path(file_name).suffix.lower()
+
+    if suffix not in {".xlsx", ".xlsm"}:
+        return {}
+
+    try:
+        workbook = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    except Exception:
+        return {}
+
+    try:
+        worksheet = workbook.worksheets[0]
+        border_column = language_columns.get("EN")
+
+        if border_column is None and language_columns:
+            border_column = next(iter(language_columns.values()))
+
+        if border_column is None:
+            return {}
+
+        header_rows = [
+            row_index
+            for row_index in range(row_count)
+            if _is_optional_header(worksheet, row_index, language_columns)
+        ]
+        blocks: dict[int, str] = {}
+        block_id = 0
+
+        for header_position, header_index in enumerate(header_rows):
+            next_header = (
+                header_rows[header_position + 1]
+                if header_position + 1 < len(header_rows)
+                else row_count
+            )
+            start, outer_style = _first_top_border(
+                worksheet,
+                header_index + 1,
+                next_header,
+                border_column,
+            )
+
+            if start is None or outer_style is None:
+                continue
+
+            end = _matching_bottom_border(
+                worksheet,
+                start,
+                next_header,
+                border_column,
+                outer_style,
+            )
+
+            if end is None:
+                continue
+
+            block_id += 1
+
+            for block_row in range(start, end + 1):
+                blocks[block_row] = str(block_id)
+
+            previous_end = end
+
+            while True:
+                next_start, next_style = _next_block_start(
+                    worksheet,
+                    previous_end + 1,
+                    next_header,
+                    border_column,
+                    language_columns,
+                )
+
+                if next_start is None or next_style != outer_style:
+                    break
+
+                next_end = _matching_bottom_border(
+                    worksheet,
+                    next_start,
+                    next_header,
+                    border_column,
+                    outer_style,
+                )
+
+                if next_end is None:
+                    break
+
+                block_id += 1
+
+                for block_row in range(next_start, next_end + 1):
+                    blocks[block_row] = str(block_id)
+
+                previous_end = next_end
+
+        return blocks
+    finally:
+        workbook.close()
+
+
+def _is_optional_header(
+    worksheet: openpyxl.worksheet.worksheet.Worksheet,
+    row_index: int,
+    language_columns: dict[str, int],
+) -> bool:
+    header = _cell_text(
+        worksheet.cell(row = row_index + 1, column = 1).value
+    ).casefold()
+
+    if not any(keyword in header for keyword in OPTIONAL_HEADER_KEYWORDS):
+        return False
+
+    for column_index in language_columns.values():
+        if _cell_text(
+            worksheet.cell(
+                row = row_index + 1,
+                column = column_index + 1,
+            ).value
+        ).strip():
+            return False
+
+    return True
+
+
+def _first_top_border(
+    worksheet: openpyxl.worksheet.worksheet.Worksheet,
+    start_index: int,
+    end_index: int,
+    border_column: int,
+) -> tuple[int | None, str | None]:
+    for row_index in range(start_index, end_index):
+        cell = worksheet.cell(
+            row = row_index + 1,
+            column = border_column + 1,
+        )
+        top = cell.border.top.style if cell.border.top else None
+
+        if top:
+            return row_index, top
+
+    return None, None
+
+
+def _matching_bottom_border(
+    worksheet: openpyxl.worksheet.worksheet.Worksheet,
+    start_index: int,
+    end_index: int,
+    border_column: int,
+    style: str,
+) -> int | None:
+    for row_index in range(start_index, end_index):
+        cell = worksheet.cell(
+            row = row_index + 1,
+            column = border_column + 1,
+        )
+        bottom = cell.border.bottom.style if cell.border.bottom else None
+
+        if bottom == style:
+            return row_index
+
+    return None
+
+
+def _next_block_start(
+    worksheet: openpyxl.worksheet.worksheet.Worksheet,
+    start_index: int,
+    end_index: int,
+    border_column: int,
+    language_columns: dict[str, int],
+) -> tuple[int | None, str | None]:
+    for row_index in range(start_index, end_index):
+        cell = worksheet.cell(
+            row = row_index + 1,
+            column = border_column + 1,
+        )
+        top = cell.border.top.style if cell.border.top else None
+
+        if top:
+            return row_index, top
+
+        if not _is_section_or_blank(
+            worksheet, row_index, language_columns
+        ):
+            return None, None
+
+    return None, None
+
+
+def _is_section_or_blank(
+    worksheet: openpyxl.worksheet.worksheet.Worksheet,
+    row_index: int,
+    language_columns: dict[str, int],
+) -> bool:
     for column_index in language_columns.values():
         if _cell_text(
             worksheet.cell(
@@ -727,6 +946,7 @@ def _parse_dialogue_rows(
     excluded_rows: set[int],
     bold_cells: set[tuple[int, int]],
     conditional_blocks: dict[int, str],
+    optional_blocks: dict[int, str],
 ) -> tuple[list[dict[str, str]], dict[str, set[str]]]:
     entries: list[dict[str, str]] = []
     bold_by_row: dict[str, set[str]] = {}
@@ -741,6 +961,7 @@ def _parse_dialogue_rows(
             "row": str(row_index + 1),
             "key": _first_cell(row).strip(),
             "conditional": conditional_blocks.get(row_index, ""),
+            "optional": optional_blocks.get(row_index, ""),
         }
         entry.update(values)
         entries.append(entry)

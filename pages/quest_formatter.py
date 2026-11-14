@@ -78,6 +78,14 @@ div[data-testid="stDialog"] div[role="dialog"] {
 </style>
 """
 
+DROP_SCRIPT_CSS = """
+<style>
+div[class*="st-key-quest_formatter_drop_script"] {
+    display: none !important;
+}
+</style>
+"""
+
 INPUT_CONTEXT_SCRIPT = """
 <script>
 (function() {
@@ -582,6 +590,8 @@ def translation_dialog() -> None:
 
 
 def _render_import_mode() -> None:
+    st.markdown(DROP_SCRIPT_CSS, unsafe_allow_html = True)
+
     imported_file = st.file_uploader(
         "Upload Quest Data File",
         type = ["xlsx", "csv"],
@@ -594,7 +604,8 @@ def _render_import_mode() -> None:
         ),
     )
 
-    components.html(GLOBAL_DROP_SCRIPT, height = 0)
+    with st.container(key = "quest_formatter_drop_script"):
+        components.html(GLOBAL_DROP_SCRIPT, height = 0)
 
     if imported_file is None:
         st.info(
@@ -774,7 +785,7 @@ def _render_import_mode() -> None:
             quest.dialogue_dataframe(target_language)
             .head(50)
             .rename(columns = {"bold": "Bold"})
-            .drop(columns = ["conditional"], errors = "ignore")
+            .drop(columns = ["conditional", "optional"], errors = "ignore")
         )
         st.dataframe(
             preview_dialogue_df,
@@ -795,6 +806,7 @@ def _render_import_mode() -> None:
         **import_table_config,
         "bold": None,
         "conditional": None,
+        "optional": None,
     }
 
     objective_tab, dialogue_tab = st.tabs(["Objective", "Dialogue"])

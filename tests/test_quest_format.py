@@ -1121,6 +1121,53 @@ class FormattingTests(unittest.TestCase):
         self.assertNotIn("<table>", output)
         self.assertIn("<em>1 starting location</em>", output)
 
+    def test_optional_blocks_are_rendered_as_tables(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Optional dialogue - before starting the quest",
+                        "",
+                        "1 starting location",
+                        "Somewhere, Snezhnaya",
+                        "Paimon",
+                        "",
+                        "2 starting location",
+                        "Elsewhere, Snezhnaya",
+                        "Paimon",
+                    ],
+                    "text": ["", "", "", "", "One", "", "", "", "Two"],
+                    "optional": ["", "", "", "1", "1", "1", "", "2", "2"],
+                }
+            ),
+            location_keys = {
+                "Somewhere, Snezhnaya",
+                "Elsewhere, Snezhnaya",
+            },
+            target_language = "RU",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertEqual(output.count("<table>"), 2)
+        self.assertEqual(output.count("</table>"), 2)
+
+        first_table = output.find("<table>")
+        second_label = output.find("2 starting location")
+        second_table = output.find("<table>", second_label)
+
+        self.assertLess(output.find("1 starting location"), first_table)
+        self.assertLess(first_table, output.find("Somewhere"))
+        self.assertLess(output.find("</table>"), second_label)
+        self.assertLess(second_label, second_table)
+        self.assertLess(second_table, output.find("Elsewhere"))
+
     def test_conditional_block_wraps_its_choices_in_one_table(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
