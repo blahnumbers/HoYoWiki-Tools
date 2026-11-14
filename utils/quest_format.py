@@ -122,9 +122,8 @@ COLLAPSE_SPEAKER_LANGUAGES = frozenset({"RU", "JP"})
 # a soft line break. The speaker name is still only shown on the first line.
 TALL_REPEATED_LINE_LANGUAGES = frozenset({"RU"})
 
-# Languages where the quest description box must be rendered before the
-# quest objective box, even when the source sheet lists the objective first.
-DESCRIPTION_FIRST_LANGUAGES = frozenset({"RU"})
+# Languages where each quest objective must precede its quest description.
+OBJECTIVE_FIRST_LANGUAGES = frozenset({"RU"})
 
 # Languages with a dedicated convention keep it; everything else uses M/F.
 GENDER_LANGUAGE_PREFERENCES = {
@@ -616,10 +615,10 @@ def markup_preset_for(language: str | None) -> str:
     return "RU" if language in {"RU", "JP"} else "EN"
 
 
-def _order_description_before_objectives(
+def _order_objective_before_description(
     classified_dialogue_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Move a description that trails its objective block in front of it."""
+    """Swap a description with the objective that follows it, pair by pair."""
 
     if classified_dialogue_df.empty:
         return classified_dialogue_df
@@ -639,22 +638,27 @@ def _order_description_before_objectives(
             while previous >= 0 and rows[previous][1]["type"] == "blank":
                 previous -= 1
 
-            if previous < 0 or rows[previous][1]["type"] != "objective":
+            if previous >= 0 and rows[previous][1]["type"] == "objective":
                 continue
 
-            start = previous
-            candidate = previous - 1
+            next_position = position + 1
 
-            while candidate >= 0:
-                if rows[candidate][1]["type"] == "objective":
-                    start = candidate
-                    candidate -= 1
-                elif rows[candidate][1]["type"] == "blank":
-                    candidate -= 1
-                else:
-                    break
+            while (
+                next_position < len(rows)
+                and rows[next_position][1]["type"] == "blank"
+            ):
+                next_position += 1
 
-            rows.insert(start, rows.pop(position))
+            if (
+                next_position >= len(rows)
+                or rows[next_position][1]["type"] != "objective"
+            ):
+                continue
+
+            rows[position], rows[next_position] = (
+                rows[next_position],
+                rows[position],
+            )
             changed = True
             break
 
@@ -757,8 +761,8 @@ def format_dialogue(
 
     output_language = target_language or preset
 
-    if output_language in DESCRIPTION_FIRST_LANGUAGES:
-        classified_dialogue_df = _order_description_before_objectives(
+    if output_language in OBJECTIVE_FIRST_LANGUAGES:
+        classified_dialogue_df = _order_objective_before_description(
             classified_dialogue_df
         )
 

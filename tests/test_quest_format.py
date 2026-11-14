@@ -684,7 +684,7 @@ class FormattingTests(unittest.TestCase):
             output,
         )
 
-    def test_russian_description_is_moved_before_the_objective(self) -> None:
+    def test_russian_keeps_objective_before_its_description(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -703,11 +703,116 @@ class FormattingTests(unittest.TestCase):
         )
 
         self.assertLess(
-            output.find("Description line"),
             output.find("Objective line"),
+            output.find("Description line"),
         )
 
-    def test_russian_description_moves_before_the_objective_block(self) -> None:
+    def test_russian_swaps_description_with_following_objective(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Quest Description", "Quest Objective"],
+                    "text": ["Description line", "Objective line"],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertLess(
+            output.find("Objective line"),
+            output.find("Description line"),
+        )
+
+    def test_russian_keeps_repeating_objective_description_pairs(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Quest Objective",
+                        "Quest Description",
+                        "Quest Objective",
+                        "Quest Description",
+                    ],
+                    "text": [
+                        "Objective one",
+                        "Description one",
+                        "Objective two",
+                        "Description two",
+                    ],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertLess(
+            output.find("Objective one"),
+            output.find("Description one"),
+        )
+        self.assertLess(
+            output.find("Description one"),
+            output.find("Objective two"),
+        )
+        self.assertLess(
+            output.find("Objective two"),
+            output.find("Description two"),
+        )
+
+    def test_russian_swaps_repeating_description_objective_pairs(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Quest Description",
+                        "Quest Objective",
+                        "Quest Description",
+                        "Quest Objective",
+                    ],
+                    "text": [
+                        "Description one",
+                        "Objective one",
+                        "Description two",
+                        "Objective two",
+                    ],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertLess(
+            output.find("Objective one"),
+            output.find("Description one"),
+        )
+        self.assertLess(
+            output.find("Description one"),
+            output.find("Objective two"),
+        )
+        self.assertLess(
+            output.find("Objective two"),
+            output.find("Description two"),
+        )
+
+    def test_russian_does_not_regroup_objectives_before_descriptions(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -734,12 +839,12 @@ class FormattingTests(unittest.TestCase):
         )
 
         self.assertLess(
-            output.find("Description line"),
-            output.find("First objective"),
-        )
-        self.assertLess(
             output.find("First objective"),
             output.find("Second objective"),
+        )
+        self.assertLess(
+            output.find("Second objective"),
+            output.find("Description line"),
         )
 
     def test_russian_removes_blank_between_location_and_description(self) -> None:
