@@ -49,6 +49,10 @@ class ClassifyRowTests(unittest.TestCase):
             (("1.0", "text"), "objective"),
             (("Missing Translation", ""), "missing"),
             (("Optional Text: Something", ""), "addopt"),
+            (("Additional Dialogue: Talk to Someone", ""), "addopt"),
+            (("(Optional: Talk to Someone)", ""), "addopt"),
+            (("An additional note about the quest", ""), "sub_mission"),
+            (("An additional Quest Objective will appear", ""), "objective"),
             (("Choice", ""), "choice_flag"),
             (("1. Traveler", "text"), "choice_branch"),
             (("2.1. Traveler", "text"), "choice_branch"),
@@ -1168,7 +1172,7 @@ class FormattingTests(unittest.TestCase):
         self.assertLess(second_label, second_table)
         self.assertLess(second_table, output.find("Elsewhere"))
 
-    def test_conditional_block_renders_choices_inside_its_table(self) -> None:
+    def test_conditional_block_keeps_choice_boxes(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -1201,16 +1205,20 @@ class FormattingTests(unittest.TestCase):
             target_language = "RU",
         )
 
-        self.assertEqual(output.count("<table>"), 1)
-        self.assertEqual(output.count("</table>"), 1)
+        self.assertEqual(output.count("<table>"), 2)
+        self.assertEqual(output.count("</table>"), 2)
 
         conditional_start = output.find("<table>")
+        choice_start = output.find("<table>", conditional_start + 1)
+        choice_end = output.find("</table>", choice_start)
         conditional_end = output.rfind("</table>")
 
         self.assertLess(output.find("If Traveler"), conditional_start)
         self.assertLess(conditional_start, output.find("Inside line"))
-        self.assertLess(output.find("Pick this"), conditional_end)
-        self.assertLess(output.find("Response line"), conditional_end)
+        self.assertLess(output.find("Inside line"), choice_start)
+        self.assertLess(choice_start, output.find("Pick this"))
+        self.assertLess(output.find("Pick this"), choice_end)
+        self.assertLess(choice_end, conditional_end)
         self.assertLess(conditional_end, output.find("After line"))
 
     def test_russian_optional_dialogue_separates_different_speakers(self) -> None:
