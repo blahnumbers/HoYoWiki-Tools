@@ -91,6 +91,43 @@ def _is_objective_key(value: str) -> bool:
     )
 
 
+def classify_header(header: str) -> str | None:
+    """Return the block type implied by a header, if any."""
+
+    header = str(header).strip()
+
+    if "Desc" in header:
+        return "description"
+
+    if re.search(r"\bObjective\b", header, re.IGNORECASE) or OBJECTIVE_KEY_RE.fullmatch(
+        header
+    ):
+        return "objective"
+
+    if "Missing" in header:
+        return "missing"
+
+    if OPTIONAL_HEADER_RE.match(header):
+        return "addopt"
+
+    if header == "Choice":
+        return "choice_flag"
+
+    if CHOICE_PREFIX_RE.search(header):
+        return "choice_branch"
+
+    if header.startswith(("(", "（")):
+        return "sub_mission"
+
+    if CONDITIONAL_HEADER_RE.match(header):
+        return "sub_mission"
+
+    if "," in header:
+        return "location"
+
+    return None
+
+
 @dataclass
 class QuestData:
     file_name: str
@@ -459,6 +496,9 @@ def _is_conditional_header(
     if not header or not CONDITIONAL_HEADER_RE.match(header):
         return False
 
+    if classify_header(header) != "sub_mission":
+        return False
+
     for column_index in language_columns.values():
         if _cell_text(
             worksheet.cell(
@@ -600,7 +640,7 @@ def _is_optional_header(
         worksheet.cell(row = row_index + 1, column = 1).value
     ).strip()
 
-    if not OPTIONAL_HEADER_RE.match(header):
+    if classify_header(header) != "addopt":
         return False
 
     for column_index in language_columns.values():

@@ -524,6 +524,50 @@ class QuestDataParsingTests(unittest.TestCase):
         for row_number in ("5", "6", "7", "8", "9", "10", "11"):
             self.assertEqual(conditions[row_number], "")
 
+    def test_objective_header_is_not_an_optional_block(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Title", "Objective Quest", "Задание с целью"],
+            ["Dialogue"],
+            [
+                "Additional Quest Objective will appear if Traveler took part",
+                "",
+                "",
+            ],
+            ["Paimon", "Inside", "Внутри"],
+            ["", "", ""],
+        ]
+        path = self.directory / "objective-not-optional.xlsx"
+        workbook = Workbook()
+        worksheet = workbook.active
+
+        for row in rows:
+            worksheet.append(row)
+
+        thin = Side(style="thin")
+
+        for column_index in (2, 3):
+            worksheet.cell(
+                row = 5,
+                column = column_index,
+            ).border = Border(top = thin)
+            worksheet.cell(
+                row = 6,
+                column = column_index,
+            ).border = Border(bottom = thin)
+
+        workbook.save(path)
+        workbook.close()
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+        optional = {
+            entry["row"]: entry["optional"]
+            for entry in quest.dialogue_rows
+        }
+
+        self.assertEqual(optional["4"], "")
+        self.assertEqual(optional["5"], "")
+
     def test_ignores_in_dialogue_objective_marker_as_section_header(self) -> None:
         rows = [
             [" ", "EN", "RU"],

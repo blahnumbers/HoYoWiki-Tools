@@ -13,11 +13,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from utils.quest_data import (
-    CONDITIONAL_HEADER_RE,
-    OPTIONAL_HEADER_RE,
-    normalize_name,
-)
+from utils.quest_data import classify_header, normalize_name
 
 # Used by the page to detect a module left behind by a hot reload.
 with open(__file__, "rb") as _source_file:
@@ -71,7 +67,6 @@ PROMPT_GROUPS = (
 PROMPT_GROUP_KEYS = tuple(group[0] for group in PROMPT_GROUPS)
 
 CHOICE_PREFIX_RE = re.compile(r"^(?:\d+\.)+\s+")
-OBJECTIVE_KEY_RE = re.compile(r"^\d+(?:\.0+)?$")
 VARIABLE_RE = re.compile(r"(?:\{[^{}]+\})+")
 RUBY_RE = re.compile(r"\s*(\S+)\{RUBY#\[.\](.+?)\}(\S+)\s*")
 GENDER_PAIR_RE = re.compile(
@@ -177,38 +172,10 @@ def classify_row(header: str, text: str) -> str:
     """Return the row type for a header/text pair."""
 
     header = header.strip()
+    header_type = classify_header(header)
 
-    if "Desc" in header:
-        return "description"
-
-    if re.search(r"\bObjective\b", header, re.IGNORECASE) or OBJECTIVE_KEY_RE.fullmatch(header):
-        return "objective"
-
-    if "Missing" in header:
-        return "missing"
-
-    if OPTIONAL_HEADER_RE.match(header):
-        return "addopt"
-
-    if header == "Choice":
-        return "choice_flag"
-
-    if CHOICE_PREFIX_RE.search(header):
-        return "choice_branch"
-
-    # Parenthesised headers are conditional notes / stage directions. Check
-    # this before the comma rule so "(If you talked to X, ...)" is not
-    # mistaken for a location.
-    if header.startswith(("(", "（")):
-        return "sub_mission"
-
-    # Unparenthesised condition headers can contain commas inside quoted
-    # quest names, so they must be checked before the location rule too.
-    if CONDITIONAL_HEADER_RE.match(header):
-        return "sub_mission"
-
-    if "," in header:
-        return "location"
+    if header_type:
+        return header_type
 
     if header and text:
         return "dialogue"
@@ -943,7 +910,11 @@ def format_dialogue(
                 gender_mode or gender_mode_for(target_language),
             )
 
-        row_optional = str(row.get("optional", "") or "")
+        row_optional = (
+            str(row.get("optional", "") or "")
+            if output_language == "RU"
+            else ""
+        )
         new_optional = row_optional != current_optional_block
 
         if new_optional:
