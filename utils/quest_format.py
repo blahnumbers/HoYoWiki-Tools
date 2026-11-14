@@ -13,7 +13,11 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from utils.quest_data import CONDITIONAL_HEADER_RE, normalize_name
+from utils.quest_data import (
+    CONDITIONAL_HEADER_RE,
+    OPTIONAL_HEADER_RE,
+    normalize_name,
+)
 
 # Used by the page to detect a module left behind by a hot reload.
 with open(__file__, "rb") as _source_file:
@@ -183,7 +187,7 @@ def classify_row(header: str, text: str) -> str:
     if "Missing" in header:
         return "missing"
 
-    if any(keyword in header for keyword in ("Additional", "Alternative", "Optional")):
+    if OPTIONAL_HEADER_RE.match(header):
         return "addopt"
 
     if header == "Choice":
@@ -1240,6 +1244,12 @@ def format_dialogue(
                             "rgb(255, 255, 255)",
                         )
 
+                if output_language == "RU" and "conditional" in opened_tags:
+                    html_data = _append_blank_paragraph(html_data)
+                    html_data += "<p>%s</p>" % choice_content
+                    pending_choice_speaker = header
+                    continue
+
                 if is_japanese and jp_choice_open:
                     # Add another option row to the open choice group.
                     html_data += """
@@ -1342,7 +1352,10 @@ def format_dialogue(
                 if pending_choice_speaker is not None:
                     if (
                         output_language == "RU"
-                        and "choice_branch" in opened_tags
+                        and (
+                            "choice_branch" in opened_tags
+                            or "conditional" in opened_tags
+                        )
                         and header != pending_choice_speaker
                     ):
                         html_data = _append_blank_paragraph(html_data)

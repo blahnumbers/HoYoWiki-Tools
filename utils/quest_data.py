@@ -55,7 +55,10 @@ CONDITIONAL_HEADER_RE = re.compile(
     r"^\s*[\(（]?\s*(?:If|When|After|Before|Unless|While)\b",
     re.IGNORECASE,
 )
-OPTIONAL_HEADER_KEYWORDS = ("optional", "additional", "alternative")
+OPTIONAL_HEADER_RE = re.compile(
+    r"^\s*[\(（]?\s*(?:Optional|Additional|Alternative)\b",
+    re.IGNORECASE,
+)
 CHOICE_PREFIX_RE = re.compile(r"^(?:\d+\.)+\s+")
 
 TRANSLATION_SEGMENT_KEYS = {
@@ -595,9 +598,9 @@ def _is_optional_header(
 ) -> bool:
     header = _cell_text(
         worksheet.cell(row = row_index + 1, column = 1).value
-    ).casefold()
+    ).strip()
 
-    if not any(keyword in header for keyword in OPTIONAL_HEADER_KEYWORDS):
+    if not OPTIONAL_HEADER_RE.match(header):
         return False
 
     for column_index in language_columns.values():

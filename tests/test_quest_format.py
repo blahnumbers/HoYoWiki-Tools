@@ -1168,7 +1168,7 @@ class FormattingTests(unittest.TestCase):
         self.assertLess(second_label, second_table)
         self.assertLess(second_table, output.find("Elsewhere"))
 
-    def test_conditional_block_wraps_its_choices_in_one_table(self) -> None:
+    def test_conditional_block_renders_choices_inside_its_table(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -1201,8 +1201,8 @@ class FormattingTests(unittest.TestCase):
             target_language = "RU",
         )
 
-        self.assertEqual(output.count("<table>"), 2)
-        self.assertEqual(output.count("</table>"), 2)
+        self.assertEqual(output.count("<table>"), 1)
+        self.assertEqual(output.count("</table>"), 1)
 
         conditional_start = output.find("<table>")
         conditional_end = output.rfind("</table>")
