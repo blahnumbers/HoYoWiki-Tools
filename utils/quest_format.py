@@ -787,6 +787,32 @@ def format_dialogue(
 
     is_japanese = target_language == "JP"
     is_korean = target_language == "KR"
+
+    # RU always uses depth-aware choice nesting. Other languages keep their
+    # existing choice layout unless the file actually contains nested choices,
+    # so non-nested output stays unchanged.
+    has_nested_choices = False
+
+    if (
+        "choice_depth" in classified_dialogue_df.columns
+        and not classified_dialogue_df.empty
+    ):
+        has_nested_choices = bool(
+            (
+                pd.to_numeric(
+                    classified_dialogue_df["choice_depth"],
+                    errors = "coerce",
+                )
+                > 1
+            ).any()
+        )
+
+    uses_depth_choices = output_language == "RU" or (
+        output_language != "JP"
+        and not is_japanese
+        and has_nested_choices
+    )
+
     kr_meta_table_open = False
     jp_choice_open = False
     jp_choice_closed = False
@@ -1065,7 +1091,7 @@ def format_dialogue(
             and not new_conditional
             and row["type"] != "blank"
         ):
-            if output_language == "RU":
+            if uses_depth_choices:
                 html_data = _ensure_nested_table_gap(
                     html_data, opened_tags
                 )
@@ -1215,7 +1241,7 @@ def format_dialogue(
 
                 opened_tags.append("addopt")
             case "choice_flag":
-                if output_language == "RU" and choice_depth_stack:
+                if uses_depth_choices and choice_depth_stack:
                     next_depth = 1
 
                     for lookahead_index in range(
@@ -1303,7 +1329,7 @@ def format_dialogue(
                             "rgb(255, 255, 255)",
                         )
 
-                if output_language == "RU":
+                if uses_depth_choices:
                     depth = int(row.get("choice_depth", 1) or 1)
 
                     while (
@@ -1650,7 +1676,7 @@ def format_dialogue(
                     continue
 
                 if (
-                    output_language == "RU"
+                    uses_depth_choices
                     and choice_depth_stack
                     and next_content_type
                     not in {"choice_branch", "choice_flag"}
@@ -1666,7 +1692,7 @@ def format_dialogue(
                         and optional_block_open
                         and row_optional
                     ):
-                        if last_tag == "choice_branch" and output_language == "RU":
+                        if last_tag == "choice_branch" and uses_depth_choices:
                             pass
                         else:
                             match last_tag:
