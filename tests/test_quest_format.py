@@ -234,6 +234,40 @@ class ClassifyDialogueTests(unittest.TestCase):
             "Путешественник/ца{M#he}{F#she}",
         )
 
+    def test_english_nickname_defaults_to_traveler(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["Hello {NICKNAME}!"]}),
+            speaker_map = {},
+            target_language = "EN",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(
+            result.defaults["variables"]["{NICKNAME}"],
+            "Traveler",
+        )
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
+        self.assertEqual(
+            result.df.iloc[0]["text"],
+            "Hello Traveler!",
+        )
+
+    def test_english_nickname_prefers_a_speaker_map_value(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["Hello {NICKNAME}!"]}),
+            speaker_map = {"Traveler": "Player"},
+            target_language = "EN",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(
+            result.defaults["variables"]["{NICKNAME}"],
+            "Player",
+        )
+
     def test_nickname_stays_unchanged_without_traveler_name(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame({"header": ["Paimon"], "text": ["Hello {NICKNAME}!"]}),

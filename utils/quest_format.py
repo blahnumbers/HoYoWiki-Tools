@@ -254,6 +254,13 @@ def classify_dialogue(
         normalize_name("Traveler"),
         "",
     )
+
+    if (
+        not localized_traveler_name
+        and (target_language or "").strip().upper() == "EN"
+    ):
+        localized_traveler_name = "Traveler"
+
     traveler_name = localized_traveler_name
 
     if target_language == "JP":
