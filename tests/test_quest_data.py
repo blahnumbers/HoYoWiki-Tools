@@ -419,6 +419,94 @@ class QuestDataParsingTests(unittest.TestCase):
         self.assertEqual(conditions["13"], "")
         self.assertEqual(conditions["14"], "")
 
+    def test_conditional_block_can_start_from_the_header_bottom_border(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Title", "Chronic Quest", "Хроническое задание"],
+            ["Dialogue"],
+            ["Paimon", "Before", "До"],
+            ["(If the player has not cleared the zone)", "", ""],
+            ["Tighnari", "Inside one", "Внутри один"],
+            ["Tighnari", "Inside two", "Внутри два"],
+            ["", "", ""],
+            ["Paimon", "After", "После"],
+        ]
+        path = self.directory / "conditional-header-border.xlsx"
+        workbook = Workbook()
+        worksheet = workbook.active
+
+        for row in rows:
+            worksheet.append(row)
+
+        thick = Side(style="thick")
+
+        for column_index in (2, 3):
+            worksheet.cell(
+                row = 5,
+                column = column_index,
+            ).border = Border(bottom = thick)
+            worksheet.cell(
+                row = 7,
+                column = column_index,
+            ).border = Border(bottom = thick)
+
+        workbook.save(path)
+        workbook.close()
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+        conditions = {
+            entry["row"]: entry["conditional"]
+            for entry in quest.dialogue_rows
+        }
+
+        self.assertEqual(conditions["5"], "1")
+        self.assertEqual(conditions["6"], "1")
+        self.assertEqual(conditions["7"], "1")
+        self.assertEqual(conditions["8"], "")
+        self.assertEqual(conditions["9"], "")
+
+    def test_conditional_header_border_does_not_wrap_a_section_header(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Title", "Objective Quest", "Задание с целью"],
+            ["Dialogue"],
+            ["Paimon", "Before", "До"],
+            ["(If the player has not cleared the zone)", "", ""],
+            ["Quest Objective", "Go somewhere", "Идите"],
+            ["Paimon", "After", "После"],
+        ]
+        path = self.directory / "conditional-header-before-objective.xlsx"
+        workbook = Workbook()
+        worksheet = workbook.active
+
+        for row in rows:
+            worksheet.append(row)
+
+        thick = Side(style="thick")
+
+        for column_index in (2, 3):
+            worksheet.cell(
+                row = 5,
+                column = column_index,
+            ).border = Border(bottom = thick)
+            worksheet.cell(
+                row = 6,
+                column = column_index,
+            ).border = Border(bottom = thick)
+
+        workbook.save(path)
+        workbook.close()
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+        conditions = {
+            entry["row"]: entry["conditional"]
+            for entry in quest.dialogue_rows
+        }
+
+        self.assertEqual(conditions["5"], "")
+        self.assertEqual(conditions["6"], "")
+        self.assertEqual(conditions["7"], "")
+
     def test_parses_optional_blocks_from_cell_borders(self) -> None:
         rows = [
             [" ", "EN", "RU"],

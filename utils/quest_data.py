@@ -452,6 +452,58 @@ def _read_conditional_blocks(
                     end = row_index
                     break
 
+            # Some sheets mark a conditional block with a bottom border on
+            # the header row and a matching bottom border on the last
+            # dialogue row, without a top border on the first content row.
+            if start is None:
+                header_cell = worksheet.cell(
+                    row = header_index + 1,
+                    column = border_column + 1,
+                )
+                header_bottom = (
+                    header_cell.border.bottom.style
+                    if header_cell.border.bottom
+                    else None
+                )
+
+                if header_bottom:
+                    first_content: int | None = None
+
+                    for row_index in range(header_index + 1, next_header):
+                        if not _row_has_content(
+                            worksheet, row_index, language_columns
+                        ):
+                            continue
+
+                        if first_content is None:
+                            first_content = row_index
+
+                            if first_content - header_index > 3:
+                                break
+
+                        cell = worksheet.cell(
+                            row = row_index + 1,
+                            column = border_column + 1,
+                        )
+                        bottom = (
+                            cell.border.bottom.style
+                            if cell.border.bottom
+                            else None
+                        )
+
+                        if bottom == header_bottom:
+                            if _block_contains_section_header(
+                                worksheet,
+                                header_index + 1,
+                                row_index,
+                            ):
+                                break
+
+                            start = header_index + 1
+                            outer_style = header_bottom
+                            end = row_index
+                            break
+
             if (
                 start is None
                 or end is None
@@ -461,14 +513,8 @@ def _read_conditional_blocks(
                 continue
 
             has_content = any(
-                _cell_text(
-                    worksheet.cell(
-                        row = row_index + 1,
-                        column = column_index + 1,
-                    ).value
-                ).strip()
+                _row_has_content(worksheet, row_index, language_columns)
                 for row_index in range(start, end + 1)
-                for column_index in language_columns.values()
             )
 
             if not has_content:
@@ -520,6 +566,47 @@ def _is_choice_row(
     ).strip()
 
     return bool(CHOICE_PREFIX_RE.match(key))
+
+
+def _row_has_content(
+    worksheet: openpyxl.worksheet.worksheet.Worksheet,
+    row_index: int,
+    language_columns: dict[str, int],
+) -> bool:
+    return any(
+        _cell_text(
+            worksheet.cell(
+                row = row_index + 1,
+                column = column_index + 1,
+            ).value
+        ).strip()
+        for column_index in language_columns.values()
+    )
+
+
+def _block_contains_section_header(
+    worksheet: openpyxl.worksheet.worksheet.Worksheet,
+    start_index: int,
+    end_index: int,
+) -> bool:
+    section_types = {
+        "description",
+        "objective",
+        "missing",
+        "addopt",
+        "sub_mission",
+        "location",
+    }
+
+    for row_index in range(start_index, end_index + 1):
+        header = _cell_text(
+            worksheet.cell(row = row_index + 1, column = 1).value
+        ).strip()
+
+        if classify_header(header) in section_types:
+            return True
+
+    return False
 
 
 def _read_optional_blocks(
