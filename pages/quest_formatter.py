@@ -104,6 +104,11 @@ PREVIEW_TEMPLATE = """<!doctype html>
     }
     p { margin: 0 0 8px; }
     p:last-child { margin-bottom: 0; }
+    p:empty {
+        min-height: 1.6em;
+        min-height: 1lh;
+        margin: 0;
+    }
     table {
         border-collapse: collapse;
         margin: 8px 0;
