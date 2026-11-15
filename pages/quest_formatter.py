@@ -86,6 +86,47 @@ div[class*="st-key-quest_formatter_drop_script"] {
 </style>
 """
 
+PREVIEW_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+    body {
+        margin: 0;
+        padding: 12px;
+        background: #1f1f1f;
+        color: #e8e8e8;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+            "Helvetica Neue", Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+    }
+    p { margin: 0 0 8px; }
+    p:last-child { margin-bottom: 0; }
+    table {
+        border-collapse: collapse;
+        margin: 8px 0;
+        max-width: 100%;
+    }
+    td {
+        border: 1px solid #5a5a5a;
+        padding: 8px 10px;
+        vertical-align: top;
+    }
+    hr {
+        border: 0;
+        border-top: 1px solid #5a5a5a;
+        margin: 12px 0;
+    }
+    img { max-width: 100%; height: auto; }
+    em { color: #b8b8b8; }
+</style>
+</head>
+<body>__CONTENT__</body>
+</html>
+"""
+
 INPUT_CONTEXT_SCRIPT = """
 <script>
 (function() {
@@ -990,6 +1031,20 @@ def _render_output() -> None:
                     % copy_result.get("error", "unknown error"),
                     icon = ":material/error:",
                 )
+
+    with st.expander(
+        "Preview formatted HTML",
+        icon = ":material/preview:",
+    ):
+        st.caption(
+            "This is how the HTML will look in the wiki editor. "
+            "Scroll inside the box to see the rest."
+        )
+        components.html(
+            PREVIEW_TEMPLATE.replace("__CONTENT__", formatted_html),
+            height = 700,
+            scrolling = True,
+        )
 
 
 if OUTPUT_KEY not in st.session_state:
