@@ -1176,6 +1176,173 @@ class FormattingTests(unittest.TestCase):
         between = output[output.find("Pick one"):output.find("Pick two")]
         self.assertIn("<p></p>", between)
 
+    def test_russian_nested_choices_nest_inside_outer_choice_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Choice",
+                        "1. Traveler",
+                        "Tadhla",
+                        "Choice",
+                        "1.1. Traveler",
+                        "Tadhla",
+                        "1.2. Traveler",
+                        "Tadhla",
+                        "2. Traveler",
+                        "Tadhla",
+                    ],
+                    "text": [
+                        "",
+                        "Outer one",
+                        "Outer reply",
+                        "",
+                        "Nested one",
+                        "Nested reply one",
+                        "Nested two",
+                        "Nested reply two",
+                        "Outer two",
+                        "Outer reply two",
+                    ],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertEqual(output.count("<table>"), output.count("</table>"))
+
+        def table_depth(needle: str) -> int:
+            position = output.find(needle)
+            self.assertGreaterEqual(position, 0)
+
+            return (
+                output.count("<table>", 0, position)
+                - output.count("</table>", 0, position)
+            )
+
+        self.assertEqual(table_depth("Outer one"), 1)
+        self.assertEqual(table_depth("Nested one"), 2)
+        self.assertEqual(table_depth("Nested two"), 2)
+        self.assertEqual(table_depth("Outer two"), 1)
+
+    def test_russian_nested_choices_inside_a_conditional_block(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "If condition",
+                        "Paimon",
+                        "Choice",
+                        "1. Traveler",
+                        "Paimon",
+                        "Choice",
+                        "1.1. Traveler",
+                        "Paimon",
+                        "2. Traveler",
+                        "Paimon",
+                        "",
+                    ],
+                    "text": [
+                        "",
+                        "Inside line",
+                        "",
+                        "Outer one",
+                        "Outer reply",
+                        "",
+                        "Nested one",
+                        "Nested reply",
+                        "Outer two",
+                        "Outer reply two",
+                        "",
+                    ],
+                    "conditional": ["1"] * 10 + [""],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertEqual(output.count("<table>"), output.count("</table>"))
+
+        def table_depth(needle: str) -> int:
+            position = output.find(needle)
+            self.assertGreaterEqual(position, 0)
+
+            return (
+                output.count("<table>", 0, position)
+                - output.count("</table>", 0, position)
+            )
+
+        self.assertEqual(table_depth("Inside line"), 1)
+        self.assertEqual(table_depth("Outer one"), 2)
+        self.assertEqual(table_depth("Nested one"), 3)
+        self.assertEqual(table_depth("Outer two"), 2)
+
+    def test_russian_choice_inside_an_optional_block_keeps_tables_balanced(
+        self,
+    ) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Optional Dialogue: Talk to X",
+                        "Paimon",
+                        "Choice",
+                        "1. Traveler",
+                        "Paimon",
+                        "",
+                        "Paimon",
+                    ],
+                    "text": [
+                        "",
+                        "Inside line",
+                        "",
+                        "Pick one",
+                        "Reply",
+                        "",
+                        "After line",
+                    ],
+                    "optional": ["", "1", "1", "1", "1", "", ""],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "RU",
+            target_language = "RU",
+        )
+
+        self.assertEqual(output.count("<table>"), 2)
+        self.assertEqual(output.count("</table>"), 2)
+        self.assertLess(
+            output.find("Inside line"),
+            output.find("Pick one"),
+        )
+        self.assertLess(
+            output.find("Pick one"),
+            output.rfind("</table>"),
+        )
+        self.assertLess(
+            output.rfind("</table>"),
+            output.find("After line"),
+        )
+
     def test_top_level_choice_tables_keep_default_spacing(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(

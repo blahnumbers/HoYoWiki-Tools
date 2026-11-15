@@ -217,6 +217,7 @@ def classify_dialogue(
     mode = gender_mode or gender_mode_for(target_language)
 
     df = _prepare_frame(dialogue_df)
+    df["choice_depth"] = 0
     has_gendered_content = any(
         "{M#" in str(value) or "{F#" in str(value)
         for column in ("header", "text")
@@ -345,6 +346,13 @@ def classify_dialogue(
                     localized_optional or normalized_header,
                 )
         elif row_type == "choice_branch":
+            prefix_match = CHOICE_PREFIX_RE.match(raw_header)
+            depth = (
+                prefix_match.group(0).count(".")
+                if prefix_match
+                else 1
+            )
+            df.at[row_index, "choice_depth"] = depth
             speaker = normalize_name(CHOICE_PREFIX_RE.sub("", raw_header))
             resolve_speaker(row_index, speaker)
         elif row_type == "location":
@@ -787,6 +795,46 @@ def format_dialogue(
     conditional_last_speaker: str | None = None
     current_optional_block = ""
     optional_block_open = False
+    choice_depth_stack: list[int] = []
+
+    def _pop_opened_tag() -> str:
+        """Pop an open table tag and keep the choice-depth stack in sync."""
+
+        tag = opened_tags.pop()
+
+        if tag == "choice_branch" and choice_depth_stack:
+            choice_depth_stack.pop()
+
+        return tag
+
+    def _remove_choice_tag() -> None:
+        """Remove an open choice tag and keep the depth stack in sync."""
+
+        if "choice_branch" not in opened_tags:
+            return
+
+        opened_tags.remove("choice_branch")
+
+        if choice_depth_stack:
+            choice_depth_stack.pop()
+
+    def _close_choice_table() -> bool:
+        """Close the innermost choice table, if it is still the open table."""
+
+        nonlocal html_data
+
+        if not opened_tags or opened_tags[-1] != "choice_branch":
+            return False
+
+        html_data += """
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    """
+        _pop_opened_tag()
+
+        return True
 
     if is_japanese and show_gendered_note:
         html_data += (
@@ -941,7 +989,7 @@ def format_dialogue(
                                 </tbody>
                             </table>
                             """
-                        opened_tags.pop()
+                        _pop_opened_tag()
 
                         if tag == "choice_branch":
                             jp_choice_open = False
@@ -990,7 +1038,7 @@ def format_dialogue(
                         </tbody>
                     </table>
                     """
-                        opened_tags.pop()
+                        _pop_opened_tag()
 
                         if tag == "choice_branch":
                             jp_choice_open = False
@@ -1129,7 +1177,7 @@ def format_dialogue(
                                 </tbody>
                             </table>
                             """
-                            opened_tags.pop()
+                            _pop_opened_tag()
 
                             if tag == "addopt":
                                 break
@@ -1160,7 +1208,36 @@ def format_dialogue(
 
                 opened_tags.append("addopt")
             case "choice_flag":
-                if "choice_branch" in opened_tags:
+                if output_language == "RU" and choice_depth_stack:
+                    next_depth = 1
+
+                    for lookahead_index in range(
+                        row_index + 1, len(classified_dialogue_df)
+                    ):
+                        lookahead_type = classified_dialogue_df.at[
+                            lookahead_index, "type"
+                        ]
+
+                        if lookahead_type == "blank":
+                            continue
+
+                        if lookahead_type == "choice_branch":
+                            next_depth = int(
+                                classified_dialogue_df.iloc[
+                                    lookahead_index
+                                ].get("choice_depth", 1)
+                                or 1
+                            )
+
+                        break
+
+                    while (
+                        choice_depth_stack
+                        and choice_depth_stack[-1] >= next_depth
+                        and _close_choice_table()
+                    ):
+                        pass
+                elif "choice_branch" in opened_tags:
                     opened_tags.reverse()
 
                     html_data += """
@@ -1218,6 +1295,32 @@ def format_dialogue(
                             "<strong>%s: </strong>%s" % (header, text),
                             "rgb(255, 255, 255)",
                         )
+
+                if output_language == "RU":
+                    depth = int(row.get("choice_depth", 1) or 1)
+
+                    while (
+                        choice_depth_stack
+                        and choice_depth_stack[-1] >= depth
+                        and _close_choice_table()
+                    ):
+                        pass
+
+                    html_data = _ensure_nested_table_gap(
+                        html_data, opened_tags
+                    )
+                    html_data += """
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td colspan="1" rowspan="1">
+                                        <p>%s</p>
+                        """ % choice_content
+
+                    opened_tags.append("choice_branch")
+                    choice_depth_stack.append(depth)
+                    pending_choice_speaker = header
+                    continue
 
                 if is_japanese and jp_choice_open:
                     # Add another option row to the open choice group.
@@ -1459,7 +1562,7 @@ def format_dialogue(
                     </table>
                     """
 
-                    opened_tags.remove("choice_branch")
+                    _remove_choice_tag()
                     opened_tags.reverse()
 
                 if last_row_type == "objective":
@@ -1530,7 +1633,7 @@ def format_dialogue(
                     <p></p>
                     """
 
-                    opened_tags.pop()
+                    _pop_opened_tag()
             case "blank":
                 if (
                     is_japanese
@@ -1538,6 +1641,15 @@ def format_dialogue(
                     and next_content_type == "choice_branch"
                 ):
                     continue
+
+                if (
+                    output_language == "RU"
+                    and choice_depth_stack
+                    and next_content_type
+                    not in {"choice_branch", "choice_flag"}
+                ):
+                    while choice_depth_stack and _close_choice_table():
+                        pass
 
                 if opened_tags and next_row_type != "choice_flag":
                     last_tag = opened_tags[-1]
@@ -1547,16 +1659,19 @@ def format_dialogue(
                         and optional_block_open
                         and row_optional
                     ):
-                        match last_tag:
-                            case "addopt" | "choice_branch" | "action":
-                                html_data += """
+                        if last_tag == "choice_branch" and output_language == "RU":
+                            pass
+                        else:
+                            match last_tag:
+                                case "addopt" | "choice_branch" | "action":
+                                    html_data += """
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
                             """
 
-                                opened_tags.pop()
+                                    _pop_opened_tag()
 
                 add_spacing = next_row_type != "choice_branch"
 
@@ -1608,7 +1723,7 @@ def format_dialogue(
                     </table>
                     """
 
-                    opened_tags.pop()
+                    _pop_opened_tag()
 
     return html_data
 

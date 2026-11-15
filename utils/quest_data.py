@@ -569,6 +569,7 @@ def _read_optional_blocks(
                 header_index + 1,
                 next_header,
                 border_column,
+                language_columns,
             )
 
             if (
@@ -660,6 +661,7 @@ def _first_top_border(
     start_index: int,
     end_index: int,
     border_column: int,
+    language_columns: dict[str, int],
 ) -> tuple[int | None, str | None]:
     for row_index in range(start_index, end_index):
         cell = worksheet.cell(
@@ -670,6 +672,11 @@ def _first_top_border(
 
         if top:
             return row_index, top
+
+        if not _is_section_or_blank(
+            worksheet, row_index, language_columns
+        ):
+            return None, None
 
     return None, None
 

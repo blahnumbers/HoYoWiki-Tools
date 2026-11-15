@@ -524,6 +524,60 @@ class QuestDataParsingTests(unittest.TestCase):
         for row_number in ("5", "6", "7", "8", "9", "10", "11"):
             self.assertEqual(conditions[row_number], "")
 
+    def test_optional_header_does_not_claim_a_later_conditional_block(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Title", "Falcon Quest", "Задание с соколом"],
+            ["Dialogue"],
+            ["Paimon", "Before", "До"],
+            ["Optional Dialogue: Talk to Masseira again", "", ""],
+            ["Masseira", "Back again", "Снова"],
+            ["", "", ""],
+            ["Quest Objective", "Go somewhere", "Идите"],
+            ["Paimon", "Middle", "Середина"],
+            ["(If the player approaches the lair)", "", ""],
+            ["Tadhla", "Wait", "Подождите"],
+            ["Tadhla", "Slow down", "Помедленнее"],
+            ["", "", ""],
+        ]
+        path = self.directory / "optional-before-conditional.xlsx"
+        workbook = Workbook()
+        worksheet = workbook.active
+
+        for row in rows:
+            worksheet.append(row)
+
+        medium = Side(style="medium")
+
+        for column_index in (2, 3):
+            worksheet.cell(
+                row = 11,
+                column = column_index,
+            ).border = Border(top = medium)
+            worksheet.cell(
+                row = 12,
+                column = column_index,
+            ).border = Border(bottom = medium)
+
+        workbook.save(path)
+        workbook.close()
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+        optional = {
+            entry["row"]: entry["optional"]
+            for entry in quest.dialogue_rows
+        }
+        conditions = {
+            entry["row"]: entry["conditional"]
+            for entry in quest.dialogue_rows
+        }
+
+        for row_number in ("5", "6", "8", "9", "10", "11", "12"):
+            self.assertEqual(optional[row_number], "")
+
+        self.assertEqual(conditions["11"], "1")
+        self.assertEqual(conditions["12"], "1")
+
     def test_objective_header_is_not_an_optional_block(self) -> None:
         rows = [
             [" ", "EN", "RU"],
