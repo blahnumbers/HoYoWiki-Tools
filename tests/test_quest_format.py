@@ -3275,6 +3275,38 @@ class FormattingTests(unittest.TestCase):
         self.assertNotIn("ella", output)
         self.assertNotIn("amigo/a", output)
 
+    def test_spanish_gender_prefill_defaults_to_male_only(self) -> None:
+        token = "{M#amigo}{F#amiga}"
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": [token]}),
+            target_language = "ES",
+            prompt_variables = True,
+            prompt_headers = False,
+        )
+
+        self.assertEqual(
+            result.defaults["variables"][token],
+            "amigo",
+        )
+
+    def test_spanish_lone_female_suffix_defaults_to_male(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": ["Paimon"], "text": ["asesor{F#a}"]}),
+            target_language = "ES",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "ES",
+        )
+
+        self.assertIn("asesor", output)
+        self.assertNotIn("asesora", output)
+        self.assertNotIn("{F#", output)
+
     def test_shortened_gender_pairs_in_objectives(self) -> None:
         objective_df = pd.DataFrame(
             {
