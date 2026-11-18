@@ -84,10 +84,9 @@ COLOR_SPAN_RE = re.compile(
 MATERIAL_CONDITION_RE = re.compile(r"^\((Obtain|Submit)\s+(.+)\)$")
 QUOTED_NAME_RE = re.compile(r'"([^"]+)"')
 TALK_TO_RE = re.compile(
-    r"^Optional Dialogue:\s*Talk to\s+(.+)$",
+    r"^(Optional Dialogue|Dialogue):\s*Talk to\s+(.+)$",
     re.IGNORECASE,
 )
-TALK_TO_KEY = "Optional Dialogue: Talk to"
 
 # Languages where the feminine form is built from the masculine stem, so a
 # lone ``{F#...}`` suffix can be merged into the preceding word.
@@ -130,7 +129,7 @@ GENDER_LANGUAGE_PREFERENCES = {
     "DE": GENDER_MODE_MALE_FIRST,
     "RU": GENDER_MODE_MALE_FIRST,
     "FR": GENDER_MODE_MALE_FIRST,
-    "ES": GENDER_MODE_MALE_FIRST,
+    "ES": GENDER_MODE_MALE,
     "IT": GENDER_MODE_MALE,
 }
 
@@ -388,11 +387,19 @@ def classify_dialogue(
                 normalize_name(raw_header)
             )
             df.at[row_index, "header"] = normalized_header
-            localized_condition = _localize_material_condition(
+            localized_condition = _localize_talk_to_header(
                 normalized_header,
                 normalized_field_label_map,
-                normalized_material_map,
+                normalized_speaker_map,
+                target_language,
             )
+
+            if not localized_condition:
+                localized_condition = _localize_material_condition(
+                    normalized_header,
+                    normalized_field_label_map,
+                    normalized_material_map,
+                )
 
             if localized_condition:
                 defaults["conditions"][normalized_header] = localized_condition
@@ -2200,15 +2207,24 @@ def _localize_talk_to_header(
     speaker_map: dict[str, str],
     language: str | None,
 ) -> str:
-    """Localize ``Optional Dialogue: Talk to <name>`` with the name translated."""
+    """Localize ``Dialogue: Talk to <name>`` with the name translated."""
 
     match = TALK_TO_RE.match(header)
 
     if match is None:
         return ""
 
-    name = match.group(1).strip()
-    template = field_label_map.get(TALK_TO_KEY)
+    prefix = normalize_name(match.group(1))
+    name = match.group(2).strip()
+    template = field_label_map.get("%s: Talk to" % prefix)
+
+    if not template:
+        canonical_prefix = (
+            "Optional Dialogue"
+            if prefix.casefold().startswith("optional")
+            else "Dialogue"
+        )
+        template = field_label_map.get("%s: Talk to" % canonical_prefix)
 
     if not template:
         return ""

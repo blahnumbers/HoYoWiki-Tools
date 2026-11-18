@@ -329,6 +329,7 @@ class ClassifyDialogueTests(unittest.TestCase):
                     }
                 ),
                 target_language = language,
+                gender_mode = quest_format.GENDER_MODE_MALE_FIRST,
                 prompt_variables = True,
                 prompt_headers = False,
             )
@@ -400,6 +401,55 @@ class ClassifyDialogueTests(unittest.TestCase):
         self.assertEqual(
             result.defaults["optional"]["Optional Dialogue: Talk to Anastasya"],
             "Необязательный диалог: Поговорите с Anastasya",
+        )
+
+    def test_dialogue_talk_to_header_uses_the_specific_label(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Dialogue: Talk to Anastasya"],
+                    "text": [""],
+                }
+            ),
+            field_label_map = {
+                "Dialogue": "Диалог",
+                "Dialogue: Talk to": "Диалог: Поговорите с",
+            },
+            speaker_map = {"Anastasya": "Анастасия"},
+            target_language = "RU",
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["conditions"]["Dialogue: Talk to Anastasya"],
+            "Диалог: Поговорите с Anastasya",
+        )
+
+        quest_format.apply_translations(result.df, {}, result.defaults)
+        self.assertEqual(
+            result.df.iloc[0]["header"],
+            "Диалог: Поговорите с Anastasya",
+        )
+
+    def test_spanish_dialogue_talk_to_header_translates_the_name(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Dialogue: Talk to Anastasya"],
+                    "text": [""],
+                }
+            ),
+            field_label_map = {"Dialogue: Talk to": "Diálogo: Habla con"},
+            speaker_map = {"Anastasya": "Anastasia"},
+            target_language = "ES",
+            prompt_variables = False,
+            prompt_headers = True,
+        )
+
+        self.assertEqual(
+            result.defaults["conditions"]["Dialogue: Talk to Anastasya"],
+            "Diálogo: Habla con Anastasia",
         )
 
     def test_obtain_and_submit_conditions_use_materials(self) -> None:
@@ -2933,12 +2983,13 @@ class FormattingTests(unittest.TestCase):
             self.assertIn(expected, output)
 
     def test_gender_mode_preferences(self) -> None:
-        for language in ("DE", "RU", "FR", "ES", "JP", None):
+        for language in ("DE", "RU", "FR", "JP", None):
             self.assertEqual(
                 quest_format.gender_mode_for(language),
                 "M/F",
             )
 
+        self.assertEqual(quest_format.gender_mode_for("ES"), "M")
         self.assertEqual(quest_format.gender_mode_for("IT"), "M")
 
     def test_female_first_mode_keeps_full_forms(self) -> None:
@@ -3193,10 +3244,36 @@ class FormattingTests(unittest.TestCase):
             result.df,
             "EN",
             target_language = "ES",
+            gender_mode = quest_format.GENDER_MODE_MALE_FIRST,
         )
 
         self.assertIn("amigo/a", output)
         self.assertIn("él/ella", output)
+
+    def test_spanish_gender_defaults_to_male_only(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon"],
+                    "text": ["{M#amigo}{F#amiga} y {M#él}{F#ella}"],
+                }
+            ),
+            target_language = "ES",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "ES",
+        )
+
+        self.assertIn("amigo", output)
+        self.assertIn("él", output)
+        self.assertNotIn("amiga", output)
+        self.assertNotIn("ella", output)
+        self.assertNotIn("amigo/a", output)
 
     def test_shortened_gender_pairs_in_objectives(self) -> None:
         objective_df = pd.DataFrame(
@@ -3224,6 +3301,7 @@ class FormattingTests(unittest.TestCase):
             result = quest_format.classify_dialogue(
                 pd.DataFrame({"header": ["Paimon"], "text": [text]}),
                 target_language = language,
+                gender_mode = quest_format.GENDER_MODE_MALE_FIRST,
                 prompt_variables = True,
                 prompt_headers = False,
             )
@@ -3237,6 +3315,7 @@ class FormattingTests(unittest.TestCase):
                 result.df,
                 "EN",
                 target_language = language,
+                gender_mode = quest_format.GENDER_MODE_MALE_FIRST,
             )
 
             self.assertIn(expected, output)
