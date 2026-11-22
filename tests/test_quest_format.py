@@ -2233,6 +2233,94 @@ class FormattingTests(unittest.TestCase):
         self.assertIn("(If condition)", choice_table)
         self.assertIn("Conditional dialogue", choice_table)
 
+    def test_return_to_option_selection_stays_inside_choice_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Choice",
+                        "1. Traveler",
+                        "Alia",
+                        "(Return to option selection)",
+                        "2. Traveler",
+                        "Paimon",
+                    ],
+                    "text": [
+                        "",
+                        "First branch",
+                        "First dialogue",
+                        "",
+                        "Second branch",
+                        "Second dialogue",
+                    ],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(result.df, "EN")
+
+        self.assertEqual(output.count("<table>"), 2)
+
+        first_table_end = output.index("</table>") + len("</table>")
+        first_table = output[:first_table_end]
+
+        self.assertIn("(Return to option selection)", first_table)
+        self.assertNotIn("Second branch", first_table)
+
+        second_table_start = output.index("<table>", first_table_end)
+        self.assertLess(
+            output.index("(Return to option selection)"),
+            first_table_end,
+        )
+        self.assertGreater(
+            output.index("Second branch"),
+            second_table_start,
+        )
+
+    def test_translated_condition_still_closes_the_choice_table(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Choice",
+                        "1. Traveler",
+                        "Alia",
+                        "(If condition)",
+                        "2. Traveler",
+                        "Paimon",
+                    ],
+                    "text": [
+                        "",
+                        "First branch",
+                        "First dialogue",
+                        "",
+                        "Second branch",
+                        "Second dialogue",
+                    ],
+                }
+            ),
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        quest_format.apply_translations(
+            result.df,
+            {"conditions": {"(If condition)": "(Если условие)"}},
+            result.defaults,
+        )
+        output = quest_format.format_dialogue(result.df, "EN")
+
+        first_table_end = output.index("</table>") + len("</table>")
+        first_table = output[:first_table_end]
+
+        self.assertNotIn("(Если условие)", first_table)
+        self.assertGreater(
+            output.index("(Если условие)"),
+            first_table_end,
+        )
+
     def test_bold_action_rows_are_wrapped_in_strong(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(

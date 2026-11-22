@@ -13,7 +13,11 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from utils.quest_data import classify_header, normalize_name
+from utils.quest_data import (
+    CONDITIONAL_HEADER_RE,
+    classify_header,
+    normalize_name,
+)
 
 # Used by the page to detect a module left behind by a hot reload.
 with open(__file__, "rb") as _source_file:
@@ -217,6 +221,7 @@ def classify_dialogue(
 
     df = _prepare_frame(dialogue_df)
     df["choice_depth"] = 0
+    df["condition"] = False
     has_gendered_content = any(
         "{M#" in str(value) or "{F#" in str(value)
         for column in ("header", "text")
@@ -387,6 +392,11 @@ def classify_dialogue(
                 normalize_name(raw_header)
             )
             df.at[row_index, "header"] = normalized_header
+            df.at[row_index, "condition"] = bool(
+                CONDITIONAL_HEADER_RE.match(
+                    _strip_condition_parens(normalized_header)
+                )
+            )
             localized_condition = _localize_talk_to_header(
                 normalized_header,
                 normalized_field_label_map,
@@ -1589,8 +1599,18 @@ def format_dialogue(
                                 % (dialogue_header, text_color, text)
                             )
             case "sub_mission":
+                is_condition_note = bool(row.get("condition", False))
+
+                if "condition" not in classified_dialogue_df.columns:
+                    is_condition_note = bool(
+                        CONDITIONAL_HEADER_RE.match(
+                            _strip_condition_parens(str(row["header"]))
+                        )
+                    )
+
                 if (
-                    "choice_branch" in opened_tags
+                    is_condition_note
+                    and "choice_branch" in opened_tags
                     and next_note_target_type in {"choice_branch", "choice_flag"}
                 ):
                     opened_tags.reverse()
