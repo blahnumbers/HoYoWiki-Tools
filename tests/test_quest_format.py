@@ -1082,6 +1082,39 @@ class FormattingTests(unittest.TestCase):
         self.assertLess(output.find("<hr>"), output.find("Elsewhere"))
         self.assertLess(output.find("Before"), output.find("<hr>"))
 
+    def test_location_change_before_dialogue_gets_a_horizontal_rule(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "Somewhere, Snezhnaya",
+                        "Quest Objective",
+                        "Elsewhere, Snezhnaya",
+                        "Paimon",
+                    ],
+                    "text": ["", "Go somewhere", "", "Hello"],
+                }
+            ),
+            location_keys = {
+                "Somewhere, Snezhnaya",
+                "Elsewhere, Snezhnaya",
+            },
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "EN",
+            target_language = "EN",
+        )
+
+        self.assertEqual(output.count("<hr>"), 1)
+        self.assertIn("<hr><p></p>", output)
+        self.assertLess(output.find("Somewhere"), output.find("<hr>"))
+        self.assertLess(output.find("<hr>"), output.find("Elsewhere"))
+        self.assertLess(output.find("Go somewhere"), output.find("<hr>"))
+
     def test_opening_location_does_not_get_a_horizontal_rule(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(

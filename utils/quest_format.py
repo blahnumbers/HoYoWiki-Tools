@@ -837,6 +837,7 @@ def format_dialogue(
     html_data = ""
     opened_tags: list[str] = []
     seen_dialogue_content = False
+    seen_location = False
     pending_choice_speaker: str | None = None
     optional_last_speaker: str | None = None
     pending_optional_header: str | None = None
@@ -1419,10 +1420,12 @@ def format_dialogue(
                 if output_language == "RU":
                     pending_choice_speaker = header
             case "location":
-                if seen_dialogue_content and not (
+                if (seen_dialogue_content or seen_location) and not (
                     row_optional and new_optional
                 ):
                     html_data += "<hr><p></p>"
+
+                seen_location = True
 
                 match language_preset:
                     case "EN":
