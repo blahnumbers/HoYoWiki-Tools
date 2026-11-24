@@ -73,6 +73,7 @@ PROMPT_GROUP_KEYS = tuple(group[0] for group in PROMPT_GROUPS)
 CHOICE_PREFIX_RE = re.compile(r"^(?:\d+\.)+\s+")
 VARIABLE_RE = re.compile(r"(?:\{[^{}]+\})+")
 RUBY_RE = re.compile(r"\s*(\S+)\{RUBY#\[.\](.+?)\}(\S+)\s*")
+RUBY_TAG_RE = re.compile(r"\{RUBY#\[[^\]]\](.+?)\}")
 GENDER_PAIR_RE = re.compile(
     r"\{F#([^{}]*)\}\{M#([^{}]*)\}|\{M#([^{}]*)\}\{F#([^{}]*)\}"
 )
@@ -1437,9 +1438,14 @@ def format_dialogue(
                         <p>%s</p>
                         """ % location_content
                     case "RU":
+                        location_color = (
+                            "rgba(235, 228, 216, 1)"
+                            if is_japanese
+                            else "rgb(255, 255, 255)"
+                        )
                         location_content = _wrap_with_base_color(
                             "<strong>%s</strong>" % header,
-                            "rgb(255, 255, 255)",
+                            location_color,
                         )
                         html_data += """
                         <p>%s</p>
@@ -1676,7 +1682,16 @@ def format_dialogue(
                     # Continue the current group of speaker-less phrases.
                     html_data += """<p>%s</p>""" % action_html
                 else:
-                    html_data += """
+                    if is_japanese and last_row_type == "blank":
+                        html_data += """
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td colspan="1" rowspan="1">
+                                    <p>%s</p>
+                    """ % action_html
+                    else:
+                        html_data += """
                     <p></p>
                     <table>
                         <tbody>
@@ -1688,7 +1703,15 @@ def format_dialogue(
                     opened_tags.append("action")
 
                 if opened_tags and opened_tags[-1] == "action" and next_row_type != "action":
-                    html_data += """
+                    if is_japanese and next_row_type == "blank":
+                        html_data += """
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    """
+                    else:
+                        html_data += """
                                 </td>
                             </tr>
                         </tbody>
@@ -1816,7 +1839,11 @@ def prepare_text(
             gender_mode or gender_mode_for(target_language),
         )
 
-    text = RUBY_RE.sub(_replace_ruby, text)
+    if target_language == "JP":
+        text = _replace_japanese_ruby(text)
+    else:
+        text = RUBY_RE.sub(_replace_ruby, text)
+
     return text.replace("{NON_BREAK_SPACE}", "&nbsp;")
 
 
@@ -2074,6 +2101,133 @@ def _replace_ruby(match: re.Match[str]) -> str:
     ruby_text = html.escape(match.group(2))
 
     return """<custom-ruby data-ruby="%s|%s"></custom-ruby>""" % (base_text, ruby_text)
+
+
+def _is_kanji(character: str) -> bool:
+    return (
+        "\u3400" <= character <= "\u4dbf"
+        or "\u4e00" <= character <= "\u9fff"
+    )
+
+
+def _is_hiragana(character: str) -> bool:
+    return "\u3040" <= character <= "\u309f"
+
+
+def _is_katakana(character: str) -> bool:
+    return (
+        "\u30a0" <= character <= "\u30ff"
+        or "\u31f0" <= character <= "\u31ff"
+    )
+
+
+def _japanese_ruby_span(
+    text: str,
+    start: int,
+    end: int,
+) -> tuple[int, int] | None:
+    """Return the base span around a Japanese ruby tag."""
+
+    before = text[start - 1] if start > 0 else ""
+    after = text[end] if end < len(text) else ""
+
+    if _is_kanji(before) and _is_kanji(after):
+        span_start = start
+
+        while span_start > 0 and _is_kanji(text[span_start - 1]):
+            span_start -= 1
+
+        span_end = end
+
+        while span_end < len(text) and _is_kanji(text[span_end]):
+            span_end += 1
+
+        return span_start, span_end
+
+    if _is_katakana(before) and _is_katakana(after):
+        span_start = start
+
+        while span_start > 0 and _is_katakana(text[span_start - 1]):
+            span_start -= 1
+
+        span_end = end
+
+        while span_end < len(text) and _is_katakana(text[span_end]):
+            span_end += 1
+
+        return span_start, span_end
+
+    if _is_kanji(after) or _is_katakana(after):
+        checker = _is_kanji if _is_kanji(after) else _is_katakana
+        span_end = end
+
+        while span_end < len(text) and checker(text[span_end]):
+            span_end += 1
+
+        return start, span_end
+
+    if _is_kanji(before) or _is_katakana(before):
+        checker = _is_kanji if _is_kanji(before) else _is_katakana
+        span_start = start
+
+        while span_start > 0 and checker(text[span_start - 1]):
+            span_start -= 1
+
+        return span_start, start
+
+    if _is_hiragana(before) and _is_hiragana(after):
+        span_start = start
+        particles = set("はがをにでとへのもやか")
+
+        while span_start > 0 and _is_hiragana(text[span_start - 1]):
+            if text[span_start - 1] in particles:
+                break
+
+            span_start -= 1
+
+        # Include a kanji stem in front of a hiragana word (e.g. 美しい).
+        while span_start > 0 and _is_kanji(text[span_start - 1]):
+            span_start -= 1
+
+        span_end = end
+
+        while span_end < len(text) and _is_hiragana(text[span_end]):
+            span_end += 1
+
+        return span_start, span_end
+
+    return None
+
+
+def _replace_japanese_ruby(text: str) -> str:
+    result = []
+    last_index = 0
+
+    for match in RUBY_TAG_RE.finditer(text):
+        span = _japanese_ruby_span(text, match.start(), match.end())
+
+        if span is None:
+            continue
+
+        span_start, span_end = span
+
+        if span_start < last_index:
+            continue
+
+        base_text = (
+            text[span_start:match.start()]
+            + text[match.end():span_end]
+        )
+        ruby_text = match.group(1)
+        result.append(text[last_index:span_start])
+        result.append(
+            '<custom-ruby data-ruby="%s|%s"></custom-ruby>'
+            % (html.escape(base_text), html.escape(ruby_text))
+        )
+        last_index = max(span_end, match.end())
+
+    result.append(text[last_index:])
+    return "".join(result)
 
 
 def _variable_context(source: str, start: int) -> str:

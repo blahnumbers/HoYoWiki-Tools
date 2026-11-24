@@ -1136,6 +1136,30 @@ class FormattingTests(unittest.TestCase):
 
         self.assertNotIn("<hr>", output)
 
+    def test_japanese_location_uses_the_location_color(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Somewhere, Snezhnaya"],
+                    "text": [""],
+                }
+            ),
+            location_keys = {"Somewhere, Snezhnaya"},
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "JP",
+            target_language = "JP",
+        )
+
+        self.assertIn(
+            'color: rgba(235, 228, 216, 1);',
+            output,
+        )
+
     def test_russian_choice_separates_a_different_speaker_response(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
@@ -2156,6 +2180,31 @@ class FormattingTests(unittest.TestCase):
         output = quest_format.format_dialogue(result.df, "EN")
 
         self.assertEqual(output.count("<table>"), 2)
+
+    def test_japanese_action_between_blanks_has_single_separator(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon", "", "", "", "Paimon"],
+                    "text": ["Before", "", "Narration", "", "After"],
+                }
+            ),
+            target_language = "JP",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "JP",
+            target_language = "JP",
+        )
+
+        before = output[output.find("Before"):output.find("Narration")]
+        after = output[output.find("Narration"):output.find("After")]
+
+        self.assertEqual(before.count("<p></p>"), 1)
+        self.assertEqual(after.count("<p></p>"), 1)
 
     def test_condition_between_choice_branches_is_outside_previous_table(self) -> None:
         result = quest_format.classify_dialogue(
@@ -3522,6 +3571,28 @@ class FormattingTests(unittest.TestCase):
 
         ruby_output = quest_format.prepare_text("pre{RUBY#[D]ruby text}base")
         self.assertIn('<custom-ruby data-ruby="prebase|ruby text">', ruby_output)
+
+    def test_japanese_ruby_uses_the_surrounding_word_as_the_base(self) -> None:
+        cases = (
+            ("月の{RUBY#[D]クータル}少女", "少女|クータル"),
+            ("「規{RUBY#[D]ルール}」", "規|ルール"),
+            ("月神様{RUBY#[D]クーヴァキ}の祝福", "月神様|クーヴァキ"),
+            ("月神様の祝{RUBY#[D]クーヴァキ}福", "祝福|クーヴァキ"),
+            ("冥界の{RUBY#[D]トゥオネタル}女主人", "女主人|トゥオネタル"),
+            ("白い{RUBY#[S]ヴィラモの泉}泉", "泉|ヴィラモの泉"),
+            ("ワル{RUBY#[S]黄砂}カ", "ワルカ|黄砂"),
+            ("マー{RUBY#[S]小さな}ルパイモン", "マールパイモン|小さな"),
+            ("美し{RUBY#[D]シェーンブルン}い泉", "美しい|シェーンブルン"),
+        )
+
+        for source, expected in cases:
+            output = quest_format.prepare_text(source, "JP")
+
+            self.assertIn(
+                '<custom-ruby data-ruby="%s"></custom-ruby>' % expected,
+                output,
+            )
+            self.assertNotIn("{RUBY#", output)
 
     def test_prepare_text_converts_literal_newlines_to_breaks(self) -> None:
         self.assertEqual(
