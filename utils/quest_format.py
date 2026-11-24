@@ -1014,6 +1014,9 @@ def format_dialogue(
                 gender_mode or gender_mode_for(target_language),
             )
 
+        if target_language == "JP":
+            header = _replace_japanese_ruby(header)
+
         row_optional = (
             str(row.get("optional", "") or "")
             if output_language == "RU"

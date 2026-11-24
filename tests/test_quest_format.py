@@ -1160,6 +1160,35 @@ class FormattingTests(unittest.TestCase):
             output,
         )
 
+    def test_japanese_location_ruby_is_converted(self) -> None:
+        header = (
+            "ナド・クライ "
+            "浴{RUBY#[D]よっこう}光の台{RUBY#[D]だいち}地"
+        )
+        result = quest_format.classify_dialogue(
+            pd.DataFrame({"header": [header], "text": [""]}),
+            location_keys = {header},
+            target_language = "JP",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "JP",
+            target_language = "JP",
+        )
+
+        self.assertIn(
+            '<custom-ruby data-ruby="浴光|よっこう"></custom-ruby>',
+            output,
+        )
+        self.assertIn(
+            '<custom-ruby data-ruby="台地|だいち"></custom-ruby>',
+            output,
+        )
+        self.assertNotIn("{RUBY#", output)
+
     def test_russian_choice_separates_a_different_speaker_response(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
