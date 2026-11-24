@@ -73,6 +73,7 @@ PROMPT_GROUP_KEYS = tuple(group[0] for group in PROMPT_GROUPS)
 CHOICE_PREFIX_RE = re.compile(r"^(?:\d+\.)+\s+")
 VARIABLE_RE = re.compile(r"(?:\{[^{}]+\})+")
 RUBY_RE = re.compile(r"\s*(\S+)\{RUBY#\[.\](.+?)\}(\S+)\s*")
+RUBY_AFTER_WORD_RE = re.compile(r"(\s*)(\S+)\{RUBY#\[.\](.+?)\}")
 RUBY_TAG_RE = re.compile(r"\{RUBY#\[[^\]]\](.+?)\}")
 GENDER_PAIR_RE = re.compile(
     r"\{F#([^{}]*)\}\{M#([^{}]*)\}|\{M#([^{}]*)\}\{F#([^{}]*)\}"
@@ -1777,6 +1778,11 @@ def format_dialogue(
                 ):
                     add_spacing = False
 
+                if is_japanese and (
+                    next_row_type == "action" or last_row_type == "action"
+                ):
+                    add_spacing = False
+
                 if output_language == "RU":
                     if (
                         previous_content_type == "location"
@@ -1844,6 +1850,10 @@ def prepare_text(
 
     if target_language == "JP":
         text = _replace_japanese_ruby(text)
+    elif target_language == "RU":
+        # Russian ruby tags can sit after a whole word and before a space.
+        text = RUBY_RE.sub(_replace_ruby, text)
+        text = RUBY_AFTER_WORD_RE.sub(_replace_ruby_after_word, text)
     else:
         text = RUBY_RE.sub(_replace_ruby, text)
 
@@ -2104,6 +2114,18 @@ def _replace_ruby(match: re.Match[str]) -> str:
     ruby_text = html.escape(match.group(2))
 
     return """<custom-ruby data-ruby="%s|%s"></custom-ruby>""" % (base_text, ruby_text)
+
+
+def _replace_ruby_after_word(match: re.Match[str]) -> str:
+    leading = match.group(1)
+    base_text = html.escape(match.group(2))
+    ruby_text = html.escape(match.group(3))
+
+    return """%s<custom-ruby data-ruby="%s|%s"></custom-ruby>""" % (
+        leading,
+        base_text,
+        ruby_text,
+    )
 
 
 def _is_kanji(character: str) -> bool:

@@ -2210,7 +2210,7 @@ class FormattingTests(unittest.TestCase):
 
         self.assertEqual(output.count("<table>"), 2)
 
-    def test_japanese_action_between_blanks_has_single_separator(self) -> None:
+    def test_japanese_action_between_blanks_has_no_separator(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -2232,8 +2232,8 @@ class FormattingTests(unittest.TestCase):
         before = output[output.find("Before"):output.find("Narration")]
         after = output[output.find("Narration"):output.find("After")]
 
-        self.assertEqual(before.count("<p></p>"), 1)
-        self.assertEqual(after.count("<p></p>"), 1)
+        self.assertEqual(before.count("<p></p>"), 0)
+        self.assertEqual(after.count("<p></p>"), 0)
 
     def test_condition_between_choice_branches_is_outside_previous_table(self) -> None:
         result = quest_format.classify_dialogue(
@@ -3622,6 +3622,30 @@ class FormattingTests(unittest.TestCase):
                 output,
             )
             self.assertNotIn("{RUBY#", output)
+
+    def test_ruby_tag_after_a_word_uses_that_word_as_the_base(self) -> None:
+        cases = (
+            ("Дева{RUBY#[D]Куутар} Луны", "Дева|Куутар"),
+            ("Белый{RUBY#[D]Велламо} источник", "Белый|Велламо"),
+            ("хозяйка{RUBY#[D]Туонетар} мира", "хозяйка|Туонетар"),
+        )
+
+        for source, expected in cases:
+            output = quest_format.prepare_text(source, "RU")
+
+            self.assertIn(
+                '<custom-ruby data-ruby="%s"></custom-ruby>' % expected,
+                output,
+            )
+            self.assertNotIn("{RUBY#", output)
+
+        spaced = quest_format.prepare_text(
+            "привела Дева{RUBY#[D]Куутар} Луны",
+            "RU",
+        )
+
+        self.assertIn("привела <custom-ruby", spaced)
+        self.assertIn("</custom-ruby> Луны", spaced)
 
     def test_prepare_text_converts_literal_newlines_to_breaks(self) -> None:
         self.assertEqual(
