@@ -73,7 +73,7 @@ PROMPT_GROUP_KEYS = tuple(group[0] for group in PROMPT_GROUPS)
 CHOICE_PREFIX_RE = re.compile(r"^(?:\d+\.)+\s+")
 VARIABLE_RE = re.compile(r"(?:\{[^{}]+\})+")
 RUBY_RE = re.compile(r"\s*(\S+)\{RUBY#\[.\](.+?)\}(\S+)\s*")
-RUBY_AFTER_WORD_RE = re.compile(r"(\s*)(\S+)\{RUBY#\[.\](.+?)\}")
+RUBY_AFTER_WORD_RE = re.compile(r"\s*(\S+)\{RUBY#\[.\](.+?)\}\s*")
 RUBY_TAG_RE = re.compile(r"\{RUBY#\[[^\]]\](.+?)\}")
 GENDER_PAIR_RE = re.compile(
     r"\{F#([^{}]*)\}\{M#([^{}]*)\}|\{M#([^{}]*)\}\{F#([^{}]*)\}"
@@ -1686,7 +1686,7 @@ def format_dialogue(
                     # Continue the current group of speaker-less phrases.
                     html_data += """<p>%s</p>""" % action_html
                 else:
-                    if is_japanese and last_row_type == "blank":
+                    if is_japanese and last_row_type in {"blank", "sub_mission"}:
                         html_data += """
                     <table>
                         <tbody>
@@ -1779,7 +1779,7 @@ def format_dialogue(
                     add_spacing = False
 
                 if is_japanese and (
-                    next_row_type == "action" or last_row_type == "action"
+                    last_row_type == "sub_mission" and next_row_type == "action"
                 ):
                     add_spacing = False
 
@@ -2117,12 +2117,10 @@ def _replace_ruby(match: re.Match[str]) -> str:
 
 
 def _replace_ruby_after_word(match: re.Match[str]) -> str:
-    leading = match.group(1)
-    base_text = html.escape(match.group(2))
-    ruby_text = html.escape(match.group(3))
+    base_text = html.escape(match.group(1))
+    ruby_text = html.escape(match.group(2))
 
-    return """%s<custom-ruby data-ruby="%s|%s"></custom-ruby>""" % (
-        leading,
+    return """<custom-ruby data-ruby="%s|%s"></custom-ruby>""" % (
         base_text,
         ruby_text,
     )

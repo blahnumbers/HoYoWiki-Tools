@@ -2210,7 +2210,7 @@ class FormattingTests(unittest.TestCase):
 
         self.assertEqual(output.count("<table>"), 2)
 
-    def test_japanese_action_between_blanks_has_no_separator(self) -> None:
+    def test_japanese_action_between_blanks_has_single_separator(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -2232,8 +2232,51 @@ class FormattingTests(unittest.TestCase):
         before = output[output.find("Before"):output.find("Narration")]
         after = output[output.find("Narration"):output.find("After")]
 
-        self.assertEqual(before.count("<p></p>"), 0)
-        self.assertEqual(after.count("<p></p>"), 0)
+        self.assertEqual(before.count("<p></p>"), 1)
+        self.assertEqual(after.count("<p></p>"), 1)
+
+    def test_japanese_condition_attaches_to_following_narration(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": [
+                        "",
+                        "(If condition)",
+                        "",
+                        "(If next condition)",
+                        "",
+                    ],
+                    "text": [
+                        "Before narration",
+                        "",
+                        "Narration one",
+                        "",
+                        "Narration two",
+                    ],
+                }
+            ),
+            target_language = "JP",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "JP",
+            target_language = "JP",
+        )
+
+        condition_end = output.find("(If condition)") + len("(If condition)")
+        narration_start = output.find("Narration one")
+        between = output[condition_end:narration_start]
+
+        self.assertNotIn("<p></p>", between)
+
+        narration_end = output.find("</table>", narration_start)
+        next_condition = output.find("(If next condition)")
+        after = output[narration_end:next_condition]
+
+        self.assertIn("<p></p>", after)
 
     def test_condition_between_choice_branches_is_outside_previous_table(self) -> None:
         result = quest_format.classify_dialogue(
@@ -3644,8 +3687,16 @@ class FormattingTests(unittest.TestCase):
             "RU",
         )
 
-        self.assertIn("привела <custom-ruby", spaced)
-        self.assertIn("</custom-ruby> Луны", spaced)
+        self.assertIn("привела<custom-ruby", spaced)
+        self.assertIn("</custom-ruby>Луны", spaced)
+        self.assertEqual(
+            quest_format.prepare_text(
+                "И раз хозяйка{RUBY#[D]Туонетар} мира мёртвых",
+                "RU",
+            ),
+            'И раз<custom-ruby data-ruby="хозяйка|Туонетар">'
+            "</custom-ruby>мира мёртвых",
+        )
 
     def test_prepare_text_converts_literal_newlines_to_breaks(self) -> None:
         self.assertEqual(
