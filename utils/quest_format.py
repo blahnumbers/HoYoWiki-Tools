@@ -1778,9 +1778,7 @@ def format_dialogue(
                 ):
                     add_spacing = False
 
-                if is_japanese and (
-                    last_row_type == "sub_mission" and next_row_type == "action"
-                ):
+                if is_japanese and next_row_type == "action":
                     add_spacing = False
 
                 if output_language == "RU":

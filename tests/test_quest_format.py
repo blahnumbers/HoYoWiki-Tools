@@ -2210,7 +2210,7 @@ class FormattingTests(unittest.TestCase):
 
         self.assertEqual(output.count("<table>"), 2)
 
-    def test_japanese_action_between_blanks_has_single_separator(self) -> None:
+    def test_japanese_narration_has_no_leading_separator(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -2232,7 +2232,7 @@ class FormattingTests(unittest.TestCase):
         before = output[output.find("Before"):output.find("Narration")]
         after = output[output.find("Narration"):output.find("After")]
 
-        self.assertEqual(before.count("<p></p>"), 1)
+        self.assertEqual(before.count("<p></p>"), 0)
         self.assertEqual(after.count("<p></p>"), 1)
 
     def test_japanese_condition_attaches_to_following_narration(self) -> None:
