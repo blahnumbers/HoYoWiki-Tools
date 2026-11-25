@@ -1775,13 +1775,16 @@ def format_dialogue(
                     opened_tags.append("action")
 
                 if opened_tags and opened_tags[-1] == "action" and next_row_type != "action":
-                    if is_japanese and next_row_type == "blank":
+                    if is_japanese:
                         html_data += """
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                     """
+
+                        if next_row_type == "objective":
+                            html_data += "<p></p>"
                     else:
                         html_data += """
                                 </td>
@@ -1847,6 +1850,13 @@ def format_dialogue(
                     add_spacing = False
 
                 if is_japanese and next_row_type == "action":
+                    add_spacing = False
+
+                if (
+                    is_japanese
+                    and previous_content_type == "action"
+                    and next_content_type != "objective"
+                ):
                     add_spacing = False
 
                 if output_language == "RU":

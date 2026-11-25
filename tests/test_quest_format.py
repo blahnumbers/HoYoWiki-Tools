@@ -2238,7 +2238,7 @@ class FormattingTests(unittest.TestCase):
 
         self.assertEqual(output.count("<table>"), 2)
 
-    def test_japanese_narration_has_no_leading_separator(self) -> None:
+    def test_japanese_narration_has_no_separators(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
                 {
@@ -2261,7 +2261,7 @@ class FormattingTests(unittest.TestCase):
         after = output[output.find("Narration"):output.find("After")]
 
         self.assertEqual(before.count("<p></p>"), 0)
-        self.assertEqual(after.count("<p></p>"), 1)
+        self.assertEqual(after.count("<p></p>"), 0)
 
     def test_japanese_dialogue_before_narration_has_no_leading_separator(self) -> None:
         result = quest_format.classify_dialogue(
@@ -2327,7 +2327,7 @@ class FormattingTests(unittest.TestCase):
         next_condition = output.find("(If next condition)")
         after = output[narration_end:next_condition]
 
-        self.assertIn("<p></p>", after)
+        self.assertNotIn("<p></p>", after)
 
     def test_japanese_objective_attaches_to_following_narration(self) -> None:
         result = quest_format.classify_dialogue(
@@ -2357,7 +2357,55 @@ class FormattingTests(unittest.TestCase):
         narration_end = output.find("</table>", narration_start)
         after = output[narration_end:output.find("After")]
 
-        self.assertIn("<p></p>", after)
+        self.assertNotIn("<p></p>", after)
+
+    def test_japanese_narration_keeps_a_separator_before_an_objective(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["", "", "Quest Objective"],
+                    "text": ["Narration line", "", "Do the thing"],
+                }
+            ),
+            target_language = "JP",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "JP",
+            target_language = "JP",
+        )
+
+        narration_end = output.find("</table>", output.find("Narration line"))
+        objective_start = output.find("Do the thing")
+        between = output[narration_end:objective_start]
+
+        self.assertIn("<p></p>", between)
+
+    def test_japanese_objective_first_has_no_separator(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Quest Objective", "Paimon"],
+                    "text": ["Do the thing", "After"],
+                }
+            ),
+            target_language = "JP",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "JP",
+            target_language = "JP",
+        )
+
+        objective_start = output.find("Do the thing")
+
+        self.assertNotIn("<p></p>", output[:objective_start])
 
     def test_condition_between_choice_branches_is_outside_previous_table(self) -> None:
         result = quest_format.classify_dialogue(
