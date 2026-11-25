@@ -264,6 +264,28 @@ class QuestDataParsingTests(unittest.TestCase):
 
         self.assertEqual([entry["key"] for entry in quest.dialogue_rows], ["Katheryne"])
 
+    def test_parses_sub_objectives(self) -> None:
+        rows = [
+            [" ", "EN", "RU"],
+            ["Quest Objectives"],
+            ["1", "Top one", "Первый"],
+            ["2", "Top two", "Второй"],
+            ["2.1", "Sub one", "Подпервый"],
+            ["2.2", "Sub two", "Подвторой"],
+            ["3", "Top three", "Третий"],
+            ["Dialogue"],
+            ["Katheryne", "Hello", "Привет"],
+        ]
+        path = self._write_rows(rows, "sub-objectives.xlsx")
+
+        quest = parse_quest_file(path.read_bytes(), path.name)
+
+        self.assertEqual(
+            [entry["key"] for entry in quest.objectives],
+            ["1", "2", "2.1", "2.2", "3"],
+        )
+        self.assertEqual(quest.objectives[2]["EN"], "Sub one")
+
     def test_empty_objectives_dataframe_uses_text_columns(self) -> None:
         rows = [
             [" ", "EN", "RU"],

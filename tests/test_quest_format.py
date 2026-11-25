@@ -701,6 +701,34 @@ class FormattingTests(unittest.TestCase):
         self.assertIn("Description line", output)
         self.assertIn("<li><p>Two</p></li>", output)
 
+    def test_format_objective_nests_sub_objectives_in_unordered_list(self) -> None:
+        objective_df = pd.DataFrame(
+            {
+                "header": ["1", "2", "2.1", "2.2", "3"],
+                "text": ["One", "Two", "Two A", "Two B", "Three"],
+            }
+        )
+
+        self.assertEqual(
+            quest_format.format_objective(objective_df),
+            "<ol><li><p>One</p></li><li><p>Two</p>"
+            "<ul><li><p>Two A</p></li><li><p>Two B</p></li></ul>"
+            "</li><li><p>Three</p></li></ol>",
+        )
+
+    def test_format_objective_treats_dot_zero_as_top_level(self) -> None:
+        objective_df = pd.DataFrame(
+            {"header": ["1.0", "2.0"], "text": ["One", "Two"]}
+        )
+
+        output = quest_format.format_objective(objective_df)
+
+        self.assertNotIn("<ul>", output)
+        self.assertEqual(
+            output,
+            "<ol><li><p>One</p></li><li><p>Two</p></li></ol>",
+        )
+
     def test_format_dialogue_uses_the_selected_preset(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame({"header": ["Katheryne"], "text": ["Hello"]}),

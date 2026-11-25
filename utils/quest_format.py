@@ -587,6 +587,46 @@ def _description_table(
                         """ % content
 
 
+def _objective_key_parts(header: str) -> tuple[int, ...] | None:
+    """Return the numeric parts of an objective key, if it has any."""
+
+    key = header.strip()
+
+    if not key:
+        return None
+
+    parts = key.split(".")
+
+    if not all(part.isdigit() for part in parts):
+        return None
+
+    if len(parts) > 1 and all(part == "0" for part in parts[1:]):
+        parts = parts[:1]
+
+    return tuple(int(part) for part in parts)
+
+
+def _render_objective_nodes(
+    nodes: list[dict[str, object]],
+    ordered: bool,
+) -> str:
+    tag = "ol" if ordered else "ul"
+    html_data = ["<%s>" % tag]
+
+    for node in nodes:
+        html_data.append("<li><p>%s</p>" % node["text"])
+
+        if node["children"]:
+            html_data.append(
+                _render_objective_nodes(node["children"], False)
+            )
+
+        html_data.append("</li>")
+
+    html_data.append("</%s>" % tag)
+    return "".join(html_data)
+
+
 def format_objective(
     objective_df: pd.DataFrame,
     target_language: str | None = None,
@@ -599,7 +639,7 @@ def format_objective(
         for key, value in (field_label_map or {}).items()
     }
     description_html = ""
-    html_data = "<ol>"
+    objective_entries: list[tuple[tuple[int, ...] | None, str]] = []
 
     for _, row in objective_df.iterrows():
         header = "" if row.get("header") is None else str(row["header"]).strip()
@@ -630,11 +670,39 @@ def format_objective(
 
             description_html += _description_table(label, text, preset)
         else:
-            html_data += "<li><p>%s</p></li>" % text
+            objective_entries.append((_objective_key_parts(header), text))
 
-    html_data += "</ol>"
+    nodes: list[dict[str, object]] = []
+    nodes_by_key: dict[tuple[int, ...], dict[str, object]] = {}
 
-    return description_html + html_data
+    for parts, text in objective_entries:
+        node: dict[str, object] = {
+            "parts": parts,
+            "text": text,
+            "children": [],
+        }
+        nodes.append(node)
+
+        if parts is not None:
+            nodes_by_key[parts] = node
+
+    roots: list[dict[str, object]] = []
+
+    for node in nodes:
+        parts = node["parts"]
+        parent_parts = (
+            parts[:-1]
+            if isinstance(parts, tuple) and len(parts) > 1
+            else ()
+        )
+        parent = nodes_by_key.get(parent_parts) if parent_parts else None
+
+        if parent is not None:
+            parent["children"].append(node)
+        else:
+            roots.append(node)
+
+    return description_html + _render_objective_nodes(roots, True)
 
 
 def markup_preset_for(language: str | None) -> str:

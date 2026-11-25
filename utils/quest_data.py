@@ -49,7 +49,7 @@ LANGUAGE_LABELS = {
 }
 
 LANGUAGE_CODE_RE = re.compile(r"^[A-Z]{2,3}(?:[-_][A-Z]{2,4})?$")
-OBJECTIVE_KEY_RE = re.compile(r"^\d+(?:\.0+)?$")
+OBJECTIVE_KEY_RE = re.compile(r"^\d+(?:\.\d+)*$")
 NAME_WHITESPACE_RE = re.compile(r"\s+")
 CONDITIONAL_HEADER_RE = re.compile(
     r"^\s*[\(（]?\s*(?:If|When|After|Before|Unless|While)\b",
@@ -1090,7 +1090,11 @@ def _parse_objectives(
         ):
             continue
 
-        normalized_key = str(int(float(key))) if "." in key else key
+        if re.fullmatch(r"\d+\.0+", key):
+            normalized_key = str(int(float(key)))
+        else:
+            normalized_key = key
+
         entry = {"row": str(row_index + 1), "key": normalized_key}
         entry.update(values)
         entries.append(entry)
