@@ -2263,6 +2263,29 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(before.count("<p></p>"), 0)
         self.assertEqual(after.count("<p></p>"), 1)
 
+    def test_japanese_dialogue_before_narration_has_no_leading_separator(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Paimon", ""],
+                    "text": ["Before", "Narration"],
+                }
+            ),
+            target_language = "JP",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "JP",
+            target_language = "JP",
+        )
+
+        before = output[output.find("Before"):output.find("Narration")]
+
+        self.assertNotIn("<p></p>", before)
+
     def test_japanese_condition_attaches_to_following_narration(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
