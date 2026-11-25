@@ -1754,7 +1754,11 @@ def format_dialogue(
                     # Continue the current group of speaker-less phrases.
                     html_data += """<p>%s</p>""" % action_html
                 else:
-                    if is_japanese and last_row_type in {"blank", "sub_mission"}:
+                    if is_japanese and last_row_type in {
+                        "blank",
+                        "sub_mission",
+                        "objective",
+                    }:
                         html_data += """
                     <table>
                         <tbody>

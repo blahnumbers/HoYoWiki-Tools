@@ -2306,6 +2306,36 @@ class FormattingTests(unittest.TestCase):
 
         self.assertIn("<p></p>", after)
 
+    def test_japanese_objective_attaches_to_following_narration(self) -> None:
+        result = quest_format.classify_dialogue(
+            pd.DataFrame(
+                {
+                    "header": ["Quest Objective", "", "Paimon"],
+                    "text": ["Talk to Verna", "Narration line", "After"],
+                }
+            ),
+            target_language = "JP",
+            prompt_variables = False,
+            prompt_headers = False,
+        )
+
+        output = quest_format.format_dialogue(
+            result.df,
+            "JP",
+            target_language = "JP",
+        )
+
+        objective_end = output.find("Talk to Verna") + len("Talk to Verna")
+        narration_start = output.find("Narration line")
+        between = output[objective_end:narration_start]
+
+        self.assertNotIn("<p></p>", between)
+
+        narration_end = output.find("</table>", narration_start)
+        after = output[narration_end:output.find("After")]
+
+        self.assertIn("<p></p>", after)
+
     def test_condition_between_choice_branches_is_outside_previous_table(self) -> None:
         result = quest_format.classify_dialogue(
             pd.DataFrame(
